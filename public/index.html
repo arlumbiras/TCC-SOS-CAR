@@ -1,0 +1,246 @@
+<!--
+  SOS Barbie — página única (SPA simples, sem framework).
+
+  As três telas do sistema (autenticação, painel do cliente, painel do
+  prestador) já estão todas escritas aqui, uma dentro da outra. Quem
+  decide qual delas fica visível é o JavaScript (public/js/app.js), que
+  apenas adiciona/remove a classe "oculta" de cada <section> — não há
+  navegação de verdade entre páginas.
+-->
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SOS Car — Socorro automotivo</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <!-- Barra fixa no topo: aparece em qualquer tela (login ou logado). -->
+  <header class="topo">
+    <div class="marca">
+      <span class="marca-icone" aria-hidden="true">🚙</span>
+      <span class="marca-nome">SOS <strong>Car</strong></span>
+    </div>
+    <div class="topo-acoes">
+      <!-- Alterna claro/escuro; lógica em public/js/theme.js -->
+      <button id="btn-tema" class="botao-icone" title="Alternar tema claro/escuro" aria-label="Alternar tema">
+        <span class="icone-tema">🌙</span>
+      </button>
+      <!-- Só aparece quando há alguém logado (controlado via JS) -->
+      <button id="btn-config" class="botao-secundario oculto">Configurações</button>
+      <button id="btn-sair" class="botao-secundario oculto">Sair</button>
+    </div>
+  </header>
+
+  <main class="conteudo">
+
+    <!-- ===================================================
+         TELA: AUTENTICAÇÃO
+         Duas escolhas independentes, cada uma com suas próprias
+         "abas": (1) perfil — cliente ou prestador; (2) modo — entrar ou
+         criar conta. O formulário de cadastro serve para os dois
+         perfis; o campo "Categoria" só some/aparece conforme a escolha.
+    ==================================================== -->
+    <section id="tela-auth" class="tela">
+      <div class="cartao cartao-auth">
+        <h1>Precisa de socorro no veículo?</h1>
+        <p class="subtitulo">Peça ajuda ou atenda quem precisa — rápido e simples.</p>
+
+        <!-- Abas: Sou cliente / Sou prestador -->
+        <div class="segmentado" id="seg-perfil">
+          <button type="button" class="segmentado-opcao ativo" data-perfil="cliente">Sou cliente</button>
+          <button type="button" class="segmentado-opcao" data-perfil="prestador">Sou prestador</button>
+        </div>
+
+        <!-- Abas: Entrar / Criar conta -->
+        <div class="segmentado segmentado-secundario" id="seg-modo">
+          <button type="button" class="segmentado-opcao ativo" data-modo="login">Entrar</button>
+          <button type="button" class="segmentado-opcao" data-modo="cadastro">Criar conta</button>
+        </div>
+
+        <!-- Mensagem de erro de login/cadastro (preenchida via JS) -->
+        <p id="auth-erro" class="mensagem-erro oculto"></p>
+
+        <!-- Formulário de login -->
+        <form id="form-login" class="formulario">
+          <label>Email
+            <input type="email" name="email" required autocomplete="email" />
+          </label>
+          <label>Senha
+            <input type="password" name="senha" required autocomplete="current-password" />
+          </label>
+          <button type="submit" class="botao-primario">Entrar</button>
+        </form>
+
+        <!-- Formulário de cadastro (serve para cliente e prestador) -->
+        <form id="form-cadastro" class="formulario oculto">
+          <label>Nome completo
+            <input type="text" name="nome" required />
+          </label>
+          <label>Email
+            <input type="email" name="email" required autocomplete="email" />
+          </label>
+          <label>Senha
+            <input type="password" name="senha" required minlength="4" autocomplete="new-password" />
+          </label>
+          <label>CPF
+            <input type="text" name="cpf" required placeholder="000.000.000-00" />
+          </label>
+          <label>Telefone <span class="opcional">(opcional)</span>
+            <input type="tel" name="telefone" placeholder="(00) 00000-0000" />
+          </label>
+          <!-- Só relevante (e só obrigatório) quando o perfil escolhido é "prestador" -->
+          <label id="campo-categoria" class="oculto">Categoria de atendimento
+            <select name="categoriaId"></select>
+          </label>
+          <button type="submit" class="botao-primario">Criar conta</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- ===================================================
+         TELA: CLIENTE
+         Alterna entre "formulário de pedir socorro" (quando não há
+         chamado ativo) e "acompanhamento do chamado" (quando há) — só
+         um dos dois blocos fica visível por vez.
+    ==================================================== -->
+    <section id="tela-cliente" class="tela oculta">
+      <div class="saudacao">
+        <h1>Olá, <span id="cliente-nome"></span></h1>
+        <p class="subtitulo">Aqui você pede socorro e acompanha o atendimento.</p>
+      </div>
+
+      <!-- Bloco 1: nenhum chamado em andamento -->
+      <div id="cliente-sem-chamado" class="cartao">
+        <h2>Precisa de socorro agora?</h2>
+        <form id="form-chamado" class="formulario">
+          <label>Tipo de problema
+            <select name="categoriaId" id="chamado-categoria"></select>
+          </label>
+          <label>Endereço
+            <input type="text" name="endereco" placeholder="Rua, número, bairro" required />
+          </label>
+          <label>Descrição do problema <span class="opcional">(opcional)</span>
+            <textarea name="descricao" rows="3" placeholder="Ex.: pneu furou, sem estepe"></textarea>
+          </label>
+          <!-- Usa a Geolocation API do navegador; ver public/js/app.js -->
+          <button type="button" id="btn-usar-localizacao" class="botao-secundario">📍 Usar minha localização</button>
+          <p id="localizacao-status" class="texto-auxiliar"></p>
+          <button type="submit" class="botao-primario">Solicitar socorro</button>
+        </form>
+      </div>
+
+      <!-- Bloco 2: chamado em andamento (ou já concluído/cancelado, ainda visível até sumir do "atual") -->
+      <div id="cliente-com-chamado" class="cartao oculta">
+        <h2>Seu chamado</h2>
+        <!-- Trilha de progresso; classes "concluido"/"atual"/"cancelado" são aplicadas via JS -->
+        <ol class="progresso" id="progresso-chamado">
+          <li data-status="aberto">Aberto</li>
+          <li data-status="aceito">Aceito</li>
+          <li data-status="em_andamento">A caminho</li>
+          <li data-status="concluido">Concluído</li>
+        </ol>
+        <dl class="detalhes" id="chamado-detalhes"></dl>
+        <button id="btn-cancelar-chamado" class="botao-perigo oculto">Cancelar chamado</button>
+
+        <!-- Só aparece quando o chamado está concluído e ainda sem avaliação -->
+        <div id="bloco-avaliacao" class="bloco-avaliacao oculto">
+          <h3>Avalie o atendimento</h3>
+          <form id="form-avaliacao" class="formulario">
+            <div class="estrelas" id="estrelas"></div>
+            <textarea name="comentario" rows="2" placeholder="Comentário (opcional)"></textarea>
+            <button type="submit" class="botao-primario">Enviar avaliação</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="cartao">
+        <h2>Histórico</h2>
+        <ul class="lista-historico" id="cliente-historico"></ul>
+      </div>
+    </section>
+
+    <!-- ===================================================
+         TELA: PRESTADOR
+         Alterna entre "lista de chamados disponíveis" (quando o
+         prestador não está atendendo ninguém) e "atendimento em
+         andamento" (quando já aceitou um chamado).
+    ==================================================== -->
+    <section id="tela-prestador" class="tela oculta">
+      <div class="saudacao">
+        <h1>Olá, <span id="prestador-nome"></span></h1>
+        <p class="subtitulo" id="prestador-categoria"></p>
+      </div>
+
+      <!-- Interruptor de disponibilidade; também atualiza a localização GPS (ver app.js) -->
+      <div class="cartao cartao-disponibilidade">
+        <label class="interruptor">
+          <input type="checkbox" id="chk-disponivel" />
+          <span class="interruptor-trilho"></span>
+          <span id="disponivel-texto">Indisponível</span>
+        </label>
+        <p class="texto-auxiliar" id="prestador-localizacao-status"></p>
+      </div>
+
+      <!-- Bloco 1: nenhum chamado aceito no momento -->
+      <div id="prestador-sem-chamado">
+        <div class="cartao">
+          <h2>Chamados disponíveis na sua região</h2>
+          <ul class="lista-chamados" id="lista-disponiveis"></ul>
+          <p id="sem-chamados-msg" class="texto-auxiliar oculto">Nenhum chamado disponível no momento.</p>
+        </div>
+      </div>
+
+      <!-- Bloco 2: chamado já aceito (status "aceito" ou "em_andamento") -->
+      <div id="prestador-com-chamado" class="cartao oculto">
+        <h2>Atendimento em andamento</h2>
+        <dl class="detalhes" id="prestador-chamado-detalhes"></dl>
+        <div class="acoes">
+          <button id="btn-iniciar" class="botao-secundario oculto">Cheguei ao local</button>
+          <button id="btn-concluir" class="botao-primario oculto">Concluir atendimento</button>
+        </div>
+      </div>
+
+      <div class="cartao">
+        <h2>Histórico de atendimentos</h2>
+        <ul class="lista-historico" id="prestador-historico"></ul>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Tela de Configurações do usuário (invisível por padrão, SPA) -->
+  <section id="tela-config" class="tela oculta">
+    <div class="cartao">
+      <h2>Configurações da conta</h2>
+      <p class="subtitulo">Altere seus dados pessoais abaixo. Deixe o campo de senha em branco para manter a senha atual.</p>
+      <form id="form-configuracoes" class="formulario">
+        <label>Nome completo
+          <input type="text" name="nome" required />
+        </label>
+        <label>Telefone <span class="opcional">(opcional)</span>
+          <input type="tel" name="telefone" />
+        </label>
+        <label>Nova senha <span class="opcional">(opcional)</span>
+          <input type="password" name="senha" minlength="4" placeholder="Deixe em branco para manter" />
+        </label>
+        <div style="display:flex;gap:10px">
+          <button type="submit" class="botao-primario">Salvar</button>
+          <button type="button" id="btn-config-cancel" class="botao-secundario">Cancelar</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <footer class="rodape">
+    <p>SOS Car — TCC Desenvolvimento de Sistemas · MVP acadêmico</p>
+  </footer>
+
+  <!-- Ordem importa: theme.js e api.js definem coisas que app.js usa -->
+  <script src="js/theme.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/masks.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

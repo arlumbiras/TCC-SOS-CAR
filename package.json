@@ -1,0 +1,17 @@
+{
+  "name": "sos-barbie",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MVP do TCC - Sistema de SOS para Veiculos Automotores (SOS Barbie)",
+  "main": "server/server.js",
+  "scripts": {
+    "dev": "node server/server.js"
+  },
+  "engines": {
+    "node": ">=16"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "express": "^4.19.2"
+  }
+}

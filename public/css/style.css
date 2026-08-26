@@ -1,0 +1,476 @@
+/* =================================================================
+   Estilos do SOS Barbie.
+
+   Tema claro/escuro: as cores nunca são escritas soltas nas regras
+   abaixo, sempre através de variáveis CSS (--nome-da-variavel),
+   declaradas uma vez em :root (tema claro, padrão) e redeclaradas em
+   :root[data-tema='escuro'] com outros valores. Quem decide qual
+   conjunto vale é o atributo "data-tema" da tag <html>, controlado por
+   public/js/theme.js. Assim, cada regra de estilo (cor de fundo, borda
+   etc.) é escrita uma única vez, usando a variável — e ela já "sabe"
+   se deve mostrar a cor clara ou escura sozinha.
+================================================================= */
+
+:root {
+  color-scheme: light dark; /* avisa o navegador para estilizar coisas nativas (scrollbar, etc.) nos dois temas */
+
+  --rosa-50: #f2f9ff;
+  --rosa-100: #e6f3ff;
+  --rosa-200: #bfe0ff;
+  --rosa-400: #4aa3ff;
+  --rosa-500: #1e88ff;
+  --rosa-600: #0f6be6;
+  --rosa-700: #084f99;
+
+  --texto: #0f2433;
+  --texto-suave: #566f7f;
+  --fundo: var(--rosa-50);
+  --superficie: #ffffff; /* fundo dos cartões, sempre mais claro que o fundo da página */
+  --borda: #dbeafc;
+  --sombra: rgba(16, 54, 94, 0.08);
+
+  --perigo: #ff0040;
+  --perigo-fundo: #ffe3ea;
+  --sucesso: #00ff88;
+  --sucesso-fundo: #e1f6ec;
+}
+
+/* Tema escuro: mesmas variáveis, valores diferentes. Note que a
+   "forma" das regras abaixo (o restante do arquivo) nunca muda — só o
+   valor por trás de cada variável. */
+:root[data-tema='escuro'] {
+  --texto: #e6f4ff;
+  --texto-suave: #9fc0e8;
+  --fundo: #071428;
+  --superficie: #0f2736;
+  --borda: #123448;
+  --sombra: rgba(0, 0, 0, 0.6);
+
+  --rosa-100: #06233a;
+  --rosa-500: #2a7bff;
+  --rosa-600: #4a90ff;
+  --rosa-700: #6aa7ff;
+
+  --perigo-fundo: #3a1622;
+  --sucesso-fundo: #123526;
+}
+
+* {
+  box-sizing: border-box; /* padding/borda passam a contar DENTRO da largura/altura definidas, evita contas de tamanho */
+}
+
+body {
+  margin: 0;
+  font-family: 'Segoe UI', system-ui, -apple-system, Roboto, Arial, sans-serif;
+  background: var(--fundo);
+  color: var(--texto);
+  transition: background-color 0.2s ease, color 0.2s ease; /* suaviza a troca de tema */
+}
+
+/* Classe usada em JS (app.js) para esconder elementos por completo,
+   sem deixar "buraco" no layout — equivalente a display:none. */
+.oculto,
+.oculta {
+  display: none !important;
+}
+
+/* ---------- Topo (barra fixa com logo, tema e botão sair) ---------- */
+.topo {
+  position: sticky; /* acompanha a rolagem, fica sempre visível no topo */
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  background: var(--superficie);
+  border-bottom: 1px solid var(--borda);
+}
+.marca {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 20px;
+  font-weight: 600;
+}
+.marca strong {
+  color: var(--rosa-600);
+}
+.topo-acoes {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.botao-icone {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 1px solid var(--borda);
+  background: var(--fundo);
+  color: var(--texto);
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+/* Contorno visível ao navegar por teclado (Tab), sem aparecer no clique
+   do mouse — acessibilidade básica para quem não usa mouse/touch. */
+.botao-icone:focus-visible,
+.formulario input:focus-visible,
+.formulario select:focus-visible,
+.formulario textarea:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--rosa-400);
+  outline-offset: 2px;
+}
+
+/* ---------- Layout geral (largura máxima central, tipo "coluna de app") ---------- */
+.conteudo {
+  max-width: 620px;
+  margin: 0 auto;
+  padding: 24px 18px 60px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px; /* espaço entre os cartões, sem precisar de margin em cada um */
+}
+
+.cartao {
+  background: var(--superficie);
+  border: 1px solid var(--borda);
+  border-radius: 16px;
+  padding: 22px;
+  box-shadow: 0 4px 16px var(--sombra);
+}
+.cartao h2 {
+  margin-top: 0;
+}
+
+.cartao-auth h1 {
+  margin-bottom: 4px;
+  font-size: 24px;
+}
+.subtitulo {
+  color: var(--texto-suave);
+  margin-top: 0;
+}
+
+/* ---------- Segmentado (as "abas" tipo pílula: cliente/prestador, entrar/cadastrar) ---------- */
+.segmentado {
+  display: flex;
+  background: var(--fundo);
+  border: 1px solid var(--borda);
+  border-radius: 999px; /* valor bem alto = vira "pílula" (cantos totalmente arredondados) */
+  padding: 4px;
+  margin: 16px 0 10px;
+}
+.segmentado-secundario {
+  margin-bottom: 20px;
+}
+.segmentado-opcao {
+  flex: 1; /* os botões dividem o espaço igualmente */
+  border: none;
+  background: transparent;
+  padding: 9px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  color: var(--texto-suave);
+}
+/* Classe alternada via JS (app.js) para marcar qual opção está ativa. */
+.segmentado-opcao.ativo {
+  background: var(--rosa-500);
+  color: #fff;
+}
+
+/* ---------- Formulários ---------- */
+.formulario {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.formulario label {
+  display: flex;
+  flex-direction: column; /* rótulo em cima, campo embaixo */
+  gap: 6px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--texto-suave);
+}
+.opcional {
+  font-weight: 400;
+}
+.formulario input,
+.formulario select,
+.formulario textarea {
+  font: inherit; /* herda a fonte do body, em vez da fonte padrão "de sistema" dos formulários */
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--borda);
+  background: var(--fundo);
+  color: var(--texto);
+}
+.formulario textarea {
+  resize: vertical; /* usuário só pode redimensionar para cima/baixo, não estica o layout na horizontal */
+}
+
+.botao-primario,
+.botao-secundario,
+.botao-perigo {
+  font: inherit;
+  font-weight: 700;
+  padding: 11px 16px;
+  border-radius: 12px;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+.botao-primario {
+  background: var(--rosa-500);
+  color: #fff;
+}
+.botao-primario:hover {
+  background: var(--rosa-600);
+}
+.botao-primario:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.botao-secundario {
+  background: transparent;
+  border-color: var(--rosa-400);
+  color: var(--rosa-600);
+}
+.botao-secundario:hover {
+  background: var(--rosa-100);
+}
+.botao-perigo {
+  background: var(--perigo-fundo);
+  color: var(--perigo);
+  border-color: var(--perigo);
+}
+
+.mensagem-erro {
+  background: var(--perigo-fundo);
+  color: var(--perigo);
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 13.5px;
+}
+
+.texto-auxiliar {
+  font-size: 12.5px;
+  color: var(--texto-suave);
+}
+
+.saudacao h1 {
+  margin-bottom: 2px;
+}
+
+/* ---------- Progresso do chamado (trilha "Aberto -> Aceito -> A caminho -> Concluído") ----------
+   Truque de CSS: "counter-reset"/"counter-increment"/"content: counter(...)"
+   numera os <li> automaticamente (1, 2, 3, 4) sem precisar escrever o
+   número no HTML nem em JS — o próprio CSS conta. */
+.progresso {
+  list-style: none;
+  display: flex;
+  padding: 0;
+  margin: 0 0 18px;
+  counter-reset: passo;
+}
+.progresso li {
+  flex: 1;
+  text-align: center;
+  font-size: 12px;
+  color: var(--texto-suave);
+  position: relative;
+  padding-top: 30px; /* abre espaço para o "círculo numerado" (::before) encaixar acima do texto */
+}
+.progresso li::before {
+  counter-increment: passo;
+  content: counter(passo);
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%); /* centraliza o círculo horizontalmente sobre o texto */
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--borda);
+  color: var(--superficie);
+  font-weight: 700;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+/* Classes alternadas via JS (app.js) conforme o status do chamado. */
+.progresso li.concluido::before {
+  background: var(--rosa-500);
+  color: #fff;
+}
+.progresso li.atual::before {
+  background: var(--rosa-600);
+  color: #fff;
+  box-shadow: 0 0 0 4px var(--rosa-100); /* "auréola" destacando a etapa atual */
+}
+.progresso li.cancelado::before {
+  content: '×'; /* substitui o número pelo "x" quando o chamado foi cancelado */
+  background: var(--perigo);
+  color: #fff;
+}
+
+/* Lista de detalhes tipo "ficha" (rótulo à esquerda, valor à direita),
+   usada tanto no card do cliente quanto no do prestador. */
+.detalhes {
+  display: grid;
+  grid-template-columns: auto 1fr; /* 1ª coluna do tamanho do texto, 2ª ocupa o resto */
+  gap: 6px 14px;
+  margin: 0 0 16px;
+  font-size: 14px;
+}
+.detalhes dt {
+  color: var(--texto-suave);
+  font-weight: 600;
+}
+.detalhes dd {
+  margin: 0;
+}
+
+.bloco-avaliacao {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--borda);
+}
+.estrelas {
+  display: flex;
+  gap: 4px;
+  font-size: 26px;
+}
+.estrela {
+  cursor: pointer;
+  color: var(--borda); /* estrela "apagada" por padrão */
+}
+.estrela.ativa {
+  color: var(--rosa-500); /* marcada via JS conforme o clique do usuário */
+}
+
+/* ---------- Disponibilidade do prestador (interruptor liga/desliga) ----------
+   Truque de CSS: o <input type="checkbox"> real fica escondido
+   (display:none); o visual do interruptor é feito com a "trilha"
+   (span.interruptor-trilho) e sua "bolinha" (::after). Quando o
+   checkbox está marcado, o seletor "input:checked + .interruptor-trilho"
+   muda a cor de fundo e desloca a bolinha para a direita. */
+.cartao-disponibilidade {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.interruptor {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.interruptor input {
+  display: none;
+}
+.interruptor-trilho {
+  width: 44px;
+  height: 24px;
+  background: var(--borda);
+  border-radius: 999px;
+  position: relative;
+  transition: background 0.2s;
+  flex: none;
+}
+.interruptor-trilho::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.2s; /* anima o deslize da bolinha */
+}
+.interruptor input:checked + .interruptor-trilho {
+  background: var(--sucesso);
+}
+.interruptor input:checked + .interruptor-trilho::after {
+  transform: translateX(20px); /* desliza a bolinha para a direita quando "ligado" */
+}
+
+/* ---------- Listas (chamados disponíveis e histórico) ---------- */
+.lista-chamados,
+.lista-historico {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.item-chamado,
+.item-historico {
+  border: 1px solid var(--borda);
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  font-size: 13.5px;
+}
+.item-chamado-info strong {
+  display: block;
+  font-size: 14.5px;
+}
+
+/* "Selo" (badge) de status no histórico — cor muda conforme o status. */
+.selo {
+  display: inline-block;
+  flex: none;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--rosa-100);
+  color: var(--rosa-700);
+  white-space: nowrap;
+}
+.selo-cancelado {
+  background: var(--perigo-fundo);
+  color: var(--perigo);
+}
+.selo-concluido {
+  background: var(--sucesso-fundo);
+  color: var(--sucesso);
+}
+
+.acoes {
+  display: flex;
+  gap: 10px;
+}
+
+.rodape {
+  text-align: center;
+  color: var(--texto-suave);
+  font-size: 12px;
+  padding: 20px;
+}
+
+/* Em telas estreitas (celular), os itens de lista empilham em vez de
+   ficar lado a lado, para não espremer o botão "Aceitar". */
+@media (max-width: 480px) {
+  .conteudo {
+    padding: 18px 12px 48px;
+  }
+  .item-chamado,
+  .item-historico {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
