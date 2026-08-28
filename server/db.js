@@ -1,61 +1,244 @@
-// =================================================================
-// "Banco de dados" do MVP.
-//
-// Em vez de um SGBD relacional de verdade (PostgreSQL/SQL Server, como
-// nos scripts DDL da pasta raiz do TCC), o MVP guarda os dados em um
-// único arquivo JSON no disco (data/db.json). Isso evita ter que instalar
-// e configurar um servidor de banco só para rodar a demonstração — o
-// "banco" inteiro é um objeto JavaScript que é lido na inicialização e
-// regravado no arquivo sempre que algo muda.
-//
-// As "tabelas" viram simplesmente listas (arrays) dentro desse objeto:
-// categorias, clientes, prestadores, chamados e avaliacoes — os mesmos
-// nomes e campos documentados em banco-dados-explicacao.md.
-// =================================================================
-const fs = require('fs');
-const path = require('path');
+const mysql = require('mysql2/promise');
 
-// Caminho do arquivo que guarda os dados: sos-barbie/data/db.json
-const CAMINHO_DB = path.join(__dirname, '..', 'data', 'db.json');
+const DB_CONFIG = {
+  host: '10.67.22.216',
+  port: 3306,
+  user: 'us_des225_soscar',
+  password: 'sda481sud',
+  database: 'bd_tcc_des_225_soscar',
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0,
+  charset: 'utf8mb4'
+};
 
-// Estado inicial do banco, usado apenas na primeira execução (quando o
-// arquivo data/db.json ainda não existe). Já vem com as 3 categorias
-// fixas do sistema cadastradas, igual ao INSERT de seed do script SQL.
-const ESTADO_INICIAL = {
-  categorias: [
-    { id: 1, nome: 'Mecânico' },
-    { id: 2, nome: 'Auto Elétrico' },
-    { id: 3, nome: 'Borracheiro' }
-  ],
+const db = {
+  categorias: [],
   clientes: [],
   prestadores: [],
   chamados: [],
   avaliacoes: []
 };
 
-// Lê o arquivo do disco e devolve o objeto JavaScript correspondente.
-// Se o arquivo ainda não existir (primeira vez que o servidor roda),
-// cria a pasta "data" e o arquivo com o estado inicial antes de ler.
-function carregar() {
-  if (!fs.existsSync(CAMINHO_DB)) {
-    fs.mkdirSync(path.dirname(CAMINHO_DB), { recursive: true });
-    fs.writeFileSync(CAMINHO_DB, JSON.stringify(ESTADO_INICIAL, null, 2));
+let pool;
+let modoFallback = false;
+
+function aplicarEstadoPadrao() {
+  db.categorias = [
+    { id: 1, nome: 'Mecânico' },
+    { id: 2, nome: 'Auto Elétrico' },
+    { id: 3, nome: 'Borracheiro' }
+  ];
+  db.clientes = [];
+  db.prestadores = [];
+  db.chamados = [];
+  db.avaliacoes = [];
+  modoFallback = true;
+}
+
+async function obterPool() {
+  if (!pool) {
+    pool = mysql.createPool(DB_CONFIG);
   }
-  return JSON.parse(fs.readFileSync(CAMINHO_DB, 'utf-8'));
+  return pool;
 }
 
-// "db" é carregado uma única vez, quando o servidor sobe, e fica em
-// memória durante toda a execução. Todas as rotas em server.js recebem
-// essa mesma referência e mexem diretamente nos arrays dela (por isso
-// funções como "salvar()" não recebem parâmetro: elas sempre gravam o
-// estado atual desse objeto compartilhado).
-const db = carregar();
+async function criarBancoSeNecessario() {
+  const conexaoBase = await mysql.createConnection({
+    host: DB_CONFIG.host,
+    port: DB_CONFIG.port,
+    user: DB_CONFIG.user,
+    password: DB_CONFIG.password,
+    charset: 'utf8mb4'
+  });
 
-// Regrava o objeto "db" inteiro no arquivo JSON. Deve ser chamada depois
-// de qualquer alteração (inserir, atualizar) para não perder os dados
-// quando o servidor for reiniciado.
-function salvar() {
-  fs.writeFileSync(CAMINHO_DB, JSON.stringify(db, null, 2));
+  try {
+    await conexaoBase.query(
+      `CREATE DATABASE IF NOT EXISTS \`${DB_CONFIG.database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`
+    );
+  } finally {
+    await conexaoBase.end();
+  }
 }
 
-module.exports = { db, salvar };
+async function garantirEstrutura() {
+  await criarBancoSeNecessario();
+  const conn = await obterPool();
+
+  const consultas = [
+    `CREATE TABLE IF NOT EXISTS categorias (
+      id INT PRIMARY KEY,
+      nome VARCHAR(100) NOT NULL
+    )`,
+    `CREATE TABLE IF NOT EXISTS clientes (
+      id VARCHAR(36) PRIMARY KEY,
+      nome VARCHAR(255) NOT NULL,
+      email VARCHAR(255) NOT NULL UNIQUE,
+      senhaHash TEXT NOT NULL,
+      telefone VARCHAR(50) NULL,
+      cpf VARCHAR(20) NOT NULL UNIQUE,
+      dataCadastro DATETIME NOT NULL
+    )`,
+    `CREATE TABLE IF NOT EXISTS prestadores (
+      id VARCHAR(36) PRIMARY KEY,
+      nome VARCHAR(255) NOT NULL,
+      email VARCHAR(255) NOT NULL UNIQUE,
+      senhaHash TEXT NOT NULL,
+      telefone VARCHAR(50) NULL,
+      cpf VARCHAR(20) NOT NULL UNIQUE,
+      categoriaId INT NOT NULL,
+      disponivel BOOLEAN NOT NULL DEFAULT FALSE,
+      latitude DOUBLE NULL,
+      longitude DOUBLE NULL,
+      dataCadastro DATETIME NOT NULL
+    )`,
+    `CREATE TABLE IF NOT EXISTS chamados (
+      id VARCHAR(36) PRIMARY KEY,
+      clienteId VARCHAR(36) NOT NULL,
+      categoriaId INT NOT NULL,
+      prestadorId VARCHAR(36) NULL,
+      latitude DOUBLE NOT NULL,
+      longitude DOUBLE NOT NULL,
+      endereco TEXT NULL,
+      descricao TEXT NULL,
+      status VARCHAR(50) NOT NULL,
+      dataAbertura DATETIME NOT NULL,
+      dataAceite DATETIME NULL,
+      dataConclusao DATETIME NULL
+    )`,
+    `CREATE TABLE IF NOT EXISTS avaliacoes (
+      id VARCHAR(36) PRIMARY KEY,
+      chamadoId VARCHAR(36) NOT NULL UNIQUE,
+      nota INT NOT NULL,
+      comentario TEXT NULL,
+      dataAvaliacao DATETIME NOT NULL
+    )`
+  ];
+
+  for (const consulta of consultas) {
+    await conn.query(consulta);
+  }
+
+  const [totalCategorias] = await conn.query('SELECT COUNT(*) AS total FROM categorias');
+  if (Number(totalCategorias[0].total) === 0) {
+    await conn.query(
+      'INSERT INTO categorias (id, nome) VALUES (1, ?), (2, ?), (3, ?) ON DUPLICATE KEY UPDATE nome = VALUES(nome)',
+      ['Mecânico', 'Auto Elétrico', 'Borracheiro']
+    );
+  }
+}
+
+async function carregar() {
+  try {
+    await garantirEstrutura();
+    const conn = await obterPool();
+
+    const [categorias] = await conn.query('SELECT * FROM categorias ORDER BY id');
+    const [clientes] = await conn.query('SELECT * FROM clientes ORDER BY dataCadastro');
+    const [prestadores] = await conn.query('SELECT * FROM prestadores ORDER BY dataCadastro');
+    const [chamados] = await conn.query('SELECT * FROM chamados ORDER BY dataAbertura');
+    const [avaliacoes] = await conn.query('SELECT * FROM avaliacoes ORDER BY dataAvaliacao');
+
+    modoFallback = false;
+    Object.assign(db, {
+      categorias,
+      clientes,
+      prestadores,
+      chamados,
+      avaliacoes
+    });
+
+    return db;
+  } catch (erro) {
+    console.warn('MySQL indisponível. Usando armazenamento em memória para manter a aplicação aberta.', erro.message);
+    aplicarEstadoPadrao();
+    return db;
+  }
+}
+
+async function salvar() {
+  if (modoFallback) {
+    return db;
+  }
+
+  try {
+    const conn = await obterPool();
+
+    await conn.query('START TRANSACTION');
+
+    try {
+      await conn.query('DELETE FROM avaliacoes');
+      await conn.query('DELETE FROM chamados');
+      await conn.query('DELETE FROM prestadores');
+      await conn.query('DELETE FROM clientes');
+      await conn.query('DELETE FROM categorias');
+
+      if (Array.isArray(db.categorias) && db.categorias.length > 0) {
+        for (const categoria of db.categorias) {
+          await conn.query('INSERT INTO categorias (id, nome) VALUES (?, ?)', [categoria.id, categoria.nome]);
+        }
+      }
+
+      if (Array.isArray(db.clientes) && db.clientes.length > 0) {
+        for (const cliente of db.clientes) {
+          await conn.query(
+            'INSERT INTO clientes (id, nome, email, senhaHash, telefone, cpf, dataCadastro) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [cliente.id, cliente.nome, cliente.email, cliente.senhaHash, cliente.telefone, cliente.cpf, cliente.dataCadastro]
+          );
+        }
+      }
+
+      if (Array.isArray(db.prestadores) && db.prestadores.length > 0) {
+        for (const prestador of db.prestadores) {
+          await conn.query(
+            'INSERT INTO prestadores (id, nome, email, senhaHash, telefone, cpf, categoriaId, disponivel, latitude, longitude, dataCadastro) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [prestador.id, prestador.nome, prestador.email, prestador.senhaHash, prestador.telefone, prestador.cpf, prestador.categoriaId, !!prestador.disponivel, prestador.latitude ?? null, prestador.longitude ?? null, prestador.dataCadastro]
+          );
+        }
+      }
+
+      if (Array.isArray(db.chamados) && db.chamados.length > 0) {
+        for (const chamado of db.chamados) {
+          await conn.query(
+            'INSERT INTO chamados (id, clienteId, categoriaId, prestadorId, latitude, longitude, endereco, descricao, status, dataAbertura, dataAceite, dataConclusao) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [chamado.id, chamado.clienteId, chamado.categoriaId, chamado.prestadorId, chamado.latitude, chamado.longitude, chamado.endereco ?? null, chamado.descricao ?? null, chamado.status, chamado.dataAbertura, chamado.dataAceite, chamado.dataConclusao]
+          );
+        }
+      }
+
+      if (Array.isArray(db.avaliacoes) && db.avaliacoes.length > 0) {
+        for (const avaliacao of db.avaliacoes) {
+          await conn.query(
+            'INSERT INTO avaliacoes (id, chamadoId, nota, comentario, dataAvaliacao) VALUES (?, ?, ?, ?, ?)',
+            [avaliacao.id, avaliacao.chamadoId, avaliacao.nota, avaliacao.comentario ?? null, avaliacao.dataAvaliacao]
+          );
+        }
+      }
+
+      await conn.query('COMMIT');
+    } catch (error) {
+      await conn.query('ROLLBACK');
+      throw error;
+    }
+  } catch (erro) {
+    console.warn('Falha ao persistir no MySQL. Mantendo dados em memória apenas.', erro.message);
+    modoFallback = true;
+    return db;
+  }
+}
+
+async function inicializarBanco() {
+  return carregar();
+}
+
+async function testarConexao() {
+  try {
+    const conn = await obterPool();
+    const [resultado] = await conn.query('SELECT 1 AS ok');
+    return resultado[0]?.ok === 1;
+  } catch (erro) {
+    return false;
+  }
+}
+
+module.exports = { db, salvar, inicializarBanco, testarConexao };

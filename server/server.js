@@ -13,7 +13,7 @@ const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const os = require('os');
 
-const { db, salvar } = require('./db');
+const { db, salvar, inicializarBanco } = require('./db');
 const { criarSessao, encerrarSessao, autenticar } = require('./auth-middleware');
 const { distanciaKm } = require('./utils/distancia');
 
@@ -476,13 +476,19 @@ function obterIpLocal() {
   return null;
 }
 
-app.listen(PORTA, HOST, () => {
-  const ipLocal = obterIpLocal();
-  if (ipLocal) {
-    console.log(`SOS Car rodando em:
+inicializarBanco()
+  .catch((erro) => {
+    console.warn('Inicialização do banco falhou; iniciando servidor em modo fallback.', erro.message);
+  })
+  .finally(() => {
+    app.listen(PORTA, HOST, () => {
+      const ipLocal = obterIpLocal();
+      if (ipLocal) {
+        console.log(`SOS Car rodando em:
   - http://localhost:${PORTA}
   - http://${ipLocal}:${PORTA} (rede local)`);
-  } else {
-    console.log(`SOS Car rodando em http://localhost:${PORTA} (host ${HOST})`);
-  }
-});
+      } else {
+        console.log(`SOS Car rodando em http://localhost:${PORTA} (host ${HOST})`);
+      }
+    });
+  });

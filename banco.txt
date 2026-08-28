@@ -1,0 +1,11 @@
+rota
+10.67.22.216:3306
+
+nome do banco
+bd_tcc_des_225_soscar
+
+usuario
+us_des_225_soscar
+
+senha:
+sda481sud
