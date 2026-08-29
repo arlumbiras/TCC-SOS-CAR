@@ -3,7 +3,7 @@ const mysql = require('mysql2/promise');
 const DB_CONFIG = {
   host: '10.67.22.216',
   port: 3306,
-  user: 'us_des225_soscar',
+  user: 'us_des_225_soscar',
   password: 'sda481sud',
   database: 'bd_tcc_des_225_soscar',
   waitForConnections: true,
@@ -22,6 +22,24 @@ const db = {
 
 let pool;
 let modoFallback = false;
+
+function paraDataHoraMysql(valor) {
+  if (!valor) return null;
+
+  const data = new Date(valor);
+  if (Number.isNaN(data.getTime())) {
+    return valor;
+  }
+
+  const ano = data.getFullYear();
+  const mes = String(data.getMonth() + 1).padStart(2, '0');
+  const dia = String(data.getDate()).padStart(2, '0');
+  const horas = String(data.getHours()).padStart(2, '0');
+  const minutos = String(data.getMinutes()).padStart(2, '0');
+  const segundos = String(data.getSeconds()).padStart(2, '0');
+
+  return `${ano}-${mes}-${dia} ${horas}:${minutos}:${segundos}`;
+}
 
 function aplicarEstadoPadrao() {
   db.categorias = [
@@ -74,44 +92,44 @@ async function garantirEstrutura() {
       id VARCHAR(36) PRIMARY KEY,
       nome VARCHAR(255) NOT NULL,
       email VARCHAR(255) NOT NULL UNIQUE,
-      senhaHash TEXT NOT NULL,
+      senha_hash TEXT NOT NULL,
       telefone VARCHAR(50) NULL,
       cpf VARCHAR(20) NOT NULL UNIQUE,
-      dataCadastro DATETIME NOT NULL
+      data_cadastro DATETIME NOT NULL
     )`,
     `CREATE TABLE IF NOT EXISTS prestadores (
       id VARCHAR(36) PRIMARY KEY,
       nome VARCHAR(255) NOT NULL,
       email VARCHAR(255) NOT NULL UNIQUE,
-      senhaHash TEXT NOT NULL,
+      senha_hash TEXT NOT NULL,
       telefone VARCHAR(50) NULL,
       cpf VARCHAR(20) NOT NULL UNIQUE,
-      categoriaId INT NOT NULL,
+      categoria_id INT NOT NULL,
       disponivel BOOLEAN NOT NULL DEFAULT FALSE,
       latitude DOUBLE NULL,
       longitude DOUBLE NULL,
-      dataCadastro DATETIME NOT NULL
+      data_cadastro DATETIME NOT NULL
     )`,
     `CREATE TABLE IF NOT EXISTS chamados (
       id VARCHAR(36) PRIMARY KEY,
-      clienteId VARCHAR(36) NOT NULL,
-      categoriaId INT NOT NULL,
-      prestadorId VARCHAR(36) NULL,
+      cliente_id VARCHAR(36) NOT NULL,
+      categoria_id INT NOT NULL,
+      prestador_id VARCHAR(36) NULL,
       latitude DOUBLE NOT NULL,
       longitude DOUBLE NOT NULL,
       endereco TEXT NULL,
       descricao TEXT NULL,
       status VARCHAR(50) NOT NULL,
-      dataAbertura DATETIME NOT NULL,
-      dataAceite DATETIME NULL,
-      dataConclusao DATETIME NULL
+      data_abertura DATETIME NOT NULL,
+      data_aceite DATETIME NULL,
+      data_conclusao DATETIME NULL
     )`,
     `CREATE TABLE IF NOT EXISTS avaliacoes (
       id VARCHAR(36) PRIMARY KEY,
-      chamadoId VARCHAR(36) NOT NULL UNIQUE,
+      chamado_id VARCHAR(36) NOT NULL UNIQUE,
       nota INT NOT NULL,
       comentario TEXT NULL,
-      dataAvaliacao DATETIME NOT NULL
+      data_avaliacao DATETIME NOT NULL
     )`
   ];
 
@@ -128,24 +146,79 @@ async function garantirEstrutura() {
   }
 }
 
+function normalizarCliente(row) {
+  return {
+    id: row.id,
+    nome: row.nome,
+    email: row.email,
+    senhaHash: row.senha_hash,
+    telefone: row.telefone,
+    cpf: row.cpf,
+    dataCadastro: row.data_cadastro
+  };
+}
+
+function normalizarPrestador(row) {
+  return {
+    id: row.id,
+    nome: row.nome,
+    email: row.email,
+    senhaHash: row.senha_hash,
+    telefone: row.telefone,
+    cpf: row.cpf,
+    categoriaId: row.categoria_id,
+    disponivel: !!row.disponivel,
+    latitude: row.latitude,
+    longitude: row.longitude,
+    dataCadastro: row.data_cadastro
+  };
+}
+
+function normalizarChamado(row) {
+  return {
+    id: row.id,
+    clienteId: row.cliente_id,
+    categoriaId: row.categoria_id,
+    prestadorId: row.prestador_id,
+    latitude: row.latitude,
+    longitude: row.longitude,
+    endereco: row.endereco,
+    descricao: row.descricao,
+    status: row.status,
+    dataAbertura: row.data_abertura,
+    dataAceite: row.data_aceite,
+    dataConclusao: row.data_conclusao
+  };
+}
+
+function normalizarAvaliacao(row) {
+  return {
+    id: row.id,
+    chamadoId: row.chamado_id,
+    nota: row.nota,
+    comentario: row.comentario,
+    dataAvaliacao: row.data_avaliacao
+  };
+}
+
 async function carregar() {
   try {
     await garantirEstrutura();
     const conn = await obterPool();
 
     const [categorias] = await conn.query('SELECT * FROM categorias ORDER BY id');
-    const [clientes] = await conn.query('SELECT * FROM clientes ORDER BY dataCadastro');
-    const [prestadores] = await conn.query('SELECT * FROM prestadores ORDER BY dataCadastro');
-    const [chamados] = await conn.query('SELECT * FROM chamados ORDER BY dataAbertura');
-    const [avaliacoes] = await conn.query('SELECT * FROM avaliacoes ORDER BY dataAvaliacao');
+    const [clientes] = await conn.query('SELECT * FROM clientes ORDER BY data_cadastro');
+    const [prestadores] = await conn.query('SELECT * FROM prestadores ORDER BY data_cadastro');
+    const [chamados] = await conn.query('SELECT * FROM chamados ORDER BY data_abertura');
+    const [avaliacoes] = await conn.query('SELECT * FROM avaliacoes ORDER BY data_avaliacao');
 
     modoFallback = false;
     Object.assign(db, {
       categorias,
-      clientes,
-      prestadores,
-      chamados,
-      avaliacoes
+      clientes: clientes.map(normalizarCliente),
+      prestadores: prestadores.map(normalizarPrestador),
+      chamados: chamados.map(normalizarChamado),
+      avaliacoes: avaliacoes.map(normalizarAvaliacao)
     });
 
     return db;
@@ -182,8 +255,8 @@ async function salvar() {
       if (Array.isArray(db.clientes) && db.clientes.length > 0) {
         for (const cliente of db.clientes) {
           await conn.query(
-            'INSERT INTO clientes (id, nome, email, senhaHash, telefone, cpf, dataCadastro) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [cliente.id, cliente.nome, cliente.email, cliente.senhaHash, cliente.telefone, cliente.cpf, cliente.dataCadastro]
+            'INSERT INTO clientes (id, nome, email, senha_hash, telefone, cpf, data_cadastro) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [cliente.id, cliente.nome, cliente.email, cliente.senhaHash, cliente.telefone, cliente.cpf, paraDataHoraMysql(cliente.dataCadastro)]
           );
         }
       }
@@ -191,8 +264,8 @@ async function salvar() {
       if (Array.isArray(db.prestadores) && db.prestadores.length > 0) {
         for (const prestador of db.prestadores) {
           await conn.query(
-            'INSERT INTO prestadores (id, nome, email, senhaHash, telefone, cpf, categoriaId, disponivel, latitude, longitude, dataCadastro) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [prestador.id, prestador.nome, prestador.email, prestador.senhaHash, prestador.telefone, prestador.cpf, prestador.categoriaId, !!prestador.disponivel, prestador.latitude ?? null, prestador.longitude ?? null, prestador.dataCadastro]
+            'INSERT INTO prestadores (id, nome, email, senha_hash, telefone, cpf, categoria_id, disponivel, latitude, longitude, data_cadastro) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [prestador.id, prestador.nome, prestador.email, prestador.senhaHash, prestador.telefone, prestador.cpf, prestador.categoriaId, !!prestador.disponivel, prestador.latitude ?? null, prestador.longitude ?? null, paraDataHoraMysql(prestador.dataCadastro)]
           );
         }
       }
@@ -200,8 +273,8 @@ async function salvar() {
       if (Array.isArray(db.chamados) && db.chamados.length > 0) {
         for (const chamado of db.chamados) {
           await conn.query(
-            'INSERT INTO chamados (id, clienteId, categoriaId, prestadorId, latitude, longitude, endereco, descricao, status, dataAbertura, dataAceite, dataConclusao) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [chamado.id, chamado.clienteId, chamado.categoriaId, chamado.prestadorId, chamado.latitude, chamado.longitude, chamado.endereco ?? null, chamado.descricao ?? null, chamado.status, chamado.dataAbertura, chamado.dataAceite, chamado.dataConclusao]
+            'INSERT INTO chamados (id, cliente_id, categoria_id, prestador_id, latitude, longitude, endereco, descricao, status, data_abertura, data_aceite, data_conclusao) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [chamado.id, chamado.clienteId, chamado.categoriaId, chamado.prestadorId, chamado.latitude, chamado.longitude, chamado.endereco ?? null, chamado.descricao ?? null, chamado.status, paraDataHoraMysql(chamado.dataAbertura), paraDataHoraMysql(chamado.dataAceite), paraDataHoraMysql(chamado.dataConclusao)]
           );
         }
       }
@@ -209,8 +282,8 @@ async function salvar() {
       if (Array.isArray(db.avaliacoes) && db.avaliacoes.length > 0) {
         for (const avaliacao of db.avaliacoes) {
           await conn.query(
-            'INSERT INTO avaliacoes (id, chamadoId, nota, comentario, dataAvaliacao) VALUES (?, ?, ?, ?, ?)',
-            [avaliacao.id, avaliacao.chamadoId, avaliacao.nota, avaliacao.comentario ?? null, avaliacao.dataAvaliacao]
+            'INSERT INTO avaliacoes (id, chamado_id, nota, comentario, data_avaliacao) VALUES (?, ?, ?, ?, ?)',
+            [avaliacao.id, avaliacao.chamadoId, avaliacao.nota, avaliacao.comentario ?? null, paraDataHoraMysql(avaliacao.dataAvaliacao)]
           );
         }
       }

@@ -6,6 +6,8 @@ bd_tcc_des_225_soscar
 
 usuario
 us_des_225_soscar
+soscar
 
 senha:
 sda481sud
+Sda481@sud

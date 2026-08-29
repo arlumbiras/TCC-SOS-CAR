@@ -20,6 +20,22 @@ const { distanciaKm } = require('./utils/distancia');
 const app = express();
 const PORTA = process.env.PORT || 3000;
 
+function paraDataHoraMysql(valor = new Date()) {
+  const data = new Date(valor);
+  if (Number.isNaN(data.getTime())) {
+    return valor;
+  }
+
+  const ano = data.getFullYear();
+  const mes = String(data.getMonth() + 1).padStart(2, '0');
+  const dia = String(data.getDate()).padStart(2, '0');
+  const horas = String(data.getHours()).padStart(2, '0');
+  const minutos = String(data.getMinutes()).padStart(2, '0');
+  const segundos = String(data.getSeconds()).padStart(2, '0');
+
+  return `${ano}-${mes}-${dia} ${horas}:${minutos}:${segundos}`;
+}
+
 // express.json() lê o corpo das requisições (ex.: os dados de um
 // formulário enviados em JSON) e disponibiliza em req.body.
 app.use(express.json());
@@ -86,7 +102,7 @@ app.post('/api/auth/registrar', async (req, res) => {
     senhaHash,
     telefone: telefone || null,
     cpf,
-    dataCadastro: new Date().toISOString()
+    dataCadastro: paraDataHoraMysql()
   };
 
   // Prestador tem campos extras que cliente não tem (ver
@@ -218,7 +234,7 @@ app.post('/api/chamados', autenticar(['cliente']), (req, res) => {
     endereco: endereco || null,
     descricao: descricao || null,
     status: 'aberto', // ciclo de vida: aberto -> aceito -> em_andamento -> concluido (ou cancelado)
-    dataAbertura: new Date().toISOString(),
+    dataAbertura: paraDataHoraMysql(),
     dataAceite: null,
     dataConclusao: null
   };
@@ -283,7 +299,7 @@ app.post('/api/chamados/:id/aceitar', autenticar(['prestador']), (req, res) => {
 
   chamado.prestadorId = prestador.id; // "trava" o chamado para este prestador
   chamado.status = 'aceito';
-  chamado.dataAceite = new Date().toISOString();
+  chamado.dataAceite = paraDataHoraMysql();
   salvar();
 
   res.json(montarChamado(chamado));
@@ -326,7 +342,7 @@ app.post('/api/chamados/:id/concluir', autenticar(['prestador']), (req, res) => 
     return res.status(409).json({ erro: 'Este chamado não pode ser concluído neste momento.' });
   }
   chamado.status = 'concluido';
-  chamado.dataConclusao = new Date().toISOString();
+  chamado.dataConclusao = paraDataHoraMysql();
   salvar();
   res.json(montarChamado(chamado));
 });
@@ -385,7 +401,7 @@ app.post('/api/chamados/:id/avaliacao', autenticar(['cliente']), (req, res) => {
     chamadoId: chamado.id,
     nota: notaNum,
     comentario: req.body.comentario || null,
-    dataAvaliacao: new Date().toISOString()
+    dataAvaliacao: paraDataHoraMysql()
   };
   db.avaliacoes.push(avaliacao);
   salvar();
