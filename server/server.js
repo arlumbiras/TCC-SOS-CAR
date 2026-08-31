@@ -18,7 +18,7 @@ const { criarSessao, encerrarSessao, autenticar } = require('./auth-middleware')
 const { distanciaKm } = require('./utils/distancia');
 
 const app = express();
-const PORTA = process.env.PORT || 135;
+const PORTA = process.env.PORT || 445;
 
 function paraDataHoraMysql(valor = new Date()) {
   const data = new Date(valor);
