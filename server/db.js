@@ -43,9 +43,9 @@ function paraDataHoraMysql(valor) {
 
 function aplicarEstadoPadrao() {
   db.categorias = [
-    { id: 1, nome: 'Mecânico' },
-    { id: 2, nome: 'Auto Elétrico' },
-    { id: 3, nome: 'Borracheiro' }
+    { id: 1, nome: 'Borracheiro' },
+    { id: 2, nome: 'Encanador' },
+    { id: 3, nome: 'Mecânico' }
   ];
   db.clientes = [];
   db.prestadores = [];
@@ -141,7 +141,7 @@ async function garantirEstrutura() {
   if (Number(totalCategorias[0].total) === 0) {
     await conn.query(
       'INSERT INTO categorias (id, nome) VALUES (1, ?), (2, ?), (3, ?) ON DUPLICATE KEY UPDATE nome = VALUES(nome)',
-      ['Mecânico', 'Auto Elétrico', 'Borracheiro']
+      ['Borracheiro', 'Encanador', 'Mecânico']
     );
   }
 }

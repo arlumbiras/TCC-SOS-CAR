@@ -52,23 +52,11 @@ DROP TABLE IF EXISTS prestador;
 DROP TABLE IF EXISTS cliente;
 DROP TABLE IF EXISTS categoria_servico;
 
--- ---------------------------------------------------------
--- TABELA: categoria_servico
--- Lista fixa com os 3 tipos de atendimento do sistema: Mecânico, Auto
--- Elétrico e Borracheiro.
--- ---------------------------------------------------------
 CREATE TABLE categoria_servico (
     id      INT AUTO_INCREMENT PRIMARY KEY,
     nome    VARCHAR(50) NOT NULL UNIQUE
 ) ENGINE=InnoDB;
--- ENGINE=InnoDB é explícito aqui (embora já seja o padrão do MySQL
--- desde a versão 5.5) porque é a única engine de armazenamento do
--- MySQL que suporta FOREIGN KEY de verdade. A engine antiga MyISAM
--- aceita a sintaxe de FK mas simplesmente a ignora.
-
--- ---------------------------------------------------------
--- TABELA: cliente
--- Guarda o cadastro de quem PEDE o socorro.
+    
 -- ---------------------------------------------------------
 CREATE TABLE cliente (
     id              INT AUTO_INCREMENT PRIMARY KEY,
@@ -160,6 +148,6 @@ CREATE INDEX idx_prestador_categoria_disponivel ON prestador(id_categoria, dispo
 -- DADOS INICIAIS (seed)
 -- ---------------------------------------------------------
 INSERT INTO categoria_servico (nome) VALUES
-    ('Mecânico'),
-    ('Auto Elétrico'),
-    ('Borracheiro');
+    ('Borracheiro'),
+    ('Encanador'),
+    ('Mecânico');
