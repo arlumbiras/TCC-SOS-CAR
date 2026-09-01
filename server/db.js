@@ -43,9 +43,9 @@ function paraDataHoraMysql(valor) {
 
 function aplicarEstadoPadrao() {
   db.categorias = [
-    { id: 1, nome: 'Mecanico' },
-    { id: 2, nome: 'borracheiro' },
-    { id: 3, nome: 'Auto eletrica' }
+    { id: 1, nome: 'Mecânico' },
+    { id: 2, nome: 'Borracheiro' },
+    { id: 3, nome: 'Auto Elétrica' }
   ];
   db.clientes = [];
   db.prestadores = [];
