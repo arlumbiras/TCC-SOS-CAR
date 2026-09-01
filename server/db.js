@@ -1,11 +1,11 @@
 const mysql = require('mysql2/promise');
 
 const DB_CONFIG = {
-  host: '10.67.22.216',
+  host: '212.85.3.212',
   port: 3306,
   user: 'us_des_225_soscar',
-  password: 'sda481sud',
-  database: 'bd_tcc_des_225_soscar',
+  password: 'Sda481@sud',
+  database: 'u815496249_soscar',
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
@@ -43,9 +43,9 @@ function paraDataHoraMysql(valor) {
 
 function aplicarEstadoPadrao() {
   db.categorias = [
-    { id: 1, nome: 'Borracheiro' },
-    { id: 2, nome: 'Encanador' },
-    { id: 3, nome: 'Mecânico' }
+    { id: 1, nome: 'Mecanico' },
+    { id: 2, nome: 'borracheiro' },
+    { id: 3, nome: 'Auto eletrica' }
   ];
   db.clientes = [];
   db.prestadores = [];
@@ -141,7 +141,7 @@ async function garantirEstrutura() {
   if (Number(totalCategorias[0].total) === 0) {
     await conn.query(
       'INSERT INTO categorias (id, nome) VALUES (1, ?), (2, ?), (3, ?) ON DUPLICATE KEY UPDATE nome = VALUES(nome)',
-      ['Borracheiro', 'Encanador', 'Mecânico']
+      ['Mecanico', 'borracheiro', 'Auto eletrica']
     );
   }
 }

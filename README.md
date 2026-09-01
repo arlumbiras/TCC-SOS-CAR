@@ -20,7 +20,7 @@ Depois abra `http://localhost:3000` no navegador.
 
   1. Na tela inicial, escolha **"Sou cliente"** ou **"Sou prestador"** e crie
    uma conta (aba "Criar conta"). Prestadores também escolhem uma categoria
-   (Borracheiro, Encanador ou Mecânico).
+   (Mecanico, borracheiro ou Auto eletrica).
 2. **Como cliente:** preencha o endereço, clique em "Usar minha localização"
    (o navegador vai pedir permissão de GPS) e solicite o socorro. Acompanhe
    o status do chamado na mesma tela.
