@@ -3,7 +3,7 @@ const mysql = require('mysql2/promise');
 const DB_CONFIG = {
   host: '212.85.3.212',
   port: 3306,
-  user: 'us_des_225_soscar',
+  user: 'u815496249_soscar',
   password: 'Sda481@sud',
   database: 'u815496249_soscar',
   waitForConnections: true,
