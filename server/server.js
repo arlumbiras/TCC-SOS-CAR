@@ -348,14 +348,56 @@ app.post('/api/chamados/:id/concluir', autenticar(['prestador']), (req, res) => 
 });
 
 // Cliente cancela o próprio chamado — só é permitido enquanto nenhum
-// prestador tiver aceitado ainda (status "aberto").
+// Cliente cancela o próprio chamado — permitido enquanto ninguém aceitou
+// (status "aberto") ou até 1 minuto após o aceite pelo prestador.
 app.post('/api/chamados/:id/cancelar', autenticar(['cliente']), (req, res) => {
   const chamado = db.chamados.find((c) => c.id === req.params.id && c.clienteId === req.sessao.id);
   if (!chamado) return res.status(404).json({ erro: 'Chamado não encontrado.' });
-  if (chamado.status !== 'aberto') {
-    return res.status(409).json({ erro: 'Só é possível cancelar um chamado que ainda não foi aceito.' });
+
+  // Se ainda não foi aceito, pode cancelar normalmente.
+  if (chamado.status === 'aberto') {
+    chamado.status = 'cancelado';
+    salvar();
+    return res.json(montarChamado(chamado));
   }
-  chamado.status = 'cancelado';
+
+  // Se foi aceito, permite cancelamento apenas dentro de 1 minuto desde o
+  // dataAceite. Depois disso, o cliente não pode mais cancelar.
+  if (chamado.status === 'aceito') {
+    if (!chamado.dataAceite) {
+      return res.status(409).json({ erro: 'Não foi possível verificar o tempo desde o aceite.' });
+    }
+    const dataAceite = new Date(chamado.dataAceite);
+    const agora = new Date();
+    const diffMs = agora - dataAceite;
+    if (Number.isNaN(dataAceite.getTime()) || diffMs > 60 * 1000) {
+      return res.status(409).json({ erro: 'Só é possível cancelar até 1 minuto após o aceite.' });
+    }
+
+    // Cancelamento dentro do prazo: liberamos o chamado para outros
+    // prestadores e limpamos o prestador vinculado.
+    chamado.status = 'cancelado';
+    chamado.prestadorId = null;
+    chamado.dataAceite = null;
+    salvar();
+    return res.json(montarChamado(chamado));
+  }
+
+  return res.status(409).json({ erro: 'Só é possível cancelar enquanto não aceito ou dentro de 1 minuto após o aceite.' });
+});
+
+// Prestador cancela um chamado que havia aceitado (libera para a fila).
+app.post('/api/chamados/:id/cancelar-prestador', autenticar(['prestador']), (req, res) => {
+  const prestador = buscarUsuario('prestador', req.sessao.id);
+  const chamado = db.chamados.find((c) => c.id === req.params.id && c.prestadorId === prestador.id);
+  if (!chamado) return res.status(404).json({ erro: 'Chamado não encontrado para este prestador.' });
+  if (chamado.status !== 'aceito') {
+    return res.status(409).json({ erro: 'Só é possível cancelar um chamado que esteja no estado "aceito".' });
+  }
+
+  chamado.prestadorId = null;
+  chamado.status = 'aberto';
+  chamado.dataAceite = null;
   salvar();
   res.json(montarChamado(chamado));
 });

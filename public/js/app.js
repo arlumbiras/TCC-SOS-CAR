@@ -431,9 +431,16 @@
       <dt>Status</dt><dd>${rotuloStatus(chamado.status)}</dd>
     `;
 
-    // Só pode cancelar enquanto ninguém aceitou; só pode avaliar depois
-    // de concluído e se ainda não tiver avaliação registrada.
-    btnCancelarChamado.classList.toggle('oculto', chamado.status !== 'aberto');
+    // Cliente pode cancelar enquanto ninguém aceitou, ou dentro de 1
+    // minuto após o aceite. Depois disso, o botão some.
+    let podeCancelarCliente = false;
+    if (chamado.status === 'aberto') {
+      podeCancelarCliente = true;
+    } else if (chamado.status === 'aceito' && chamado.dataAceite) {
+      const diff = Date.now() - new Date(chamado.dataAceite).getTime();
+      if (!Number.isNaN(diff) && diff <= 60 * 1000) podeCancelarCliente = true;
+    }
+    btnCancelarChamado.classList.toggle('oculto', !podeCancelarCliente);
     blocoAvaliacao.classList.toggle('oculto', !(chamado.status === 'concluido' && !chamado.avaliacao));
   }
 
@@ -452,6 +459,7 @@
   const prestadorChamadoDetalhesEl = document.getElementById('prestador-chamado-detalhes');
   const btnIniciar = document.getElementById('btn-iniciar');
   const btnConcluir = document.getElementById('btn-concluir');
+  const btnCancelarPrestador = document.getElementById('btn-cancelar-prestador');
   const prestadorHistoricoEl = document.getElementById('prestador-historico');
 
   let localizacaoPrestador = null;
@@ -535,6 +543,16 @@
     }
   });
 
+  btnCancelarPrestador.addEventListener('click', async () => {
+    if (!chamadoEmFoco || !confirm('Cancelar este atendimento e liberar o chamado para outros prestadores?')) return;
+    try {
+      await API.cancelarPorPrestador(chamadoEmFoco.id);
+      await atualizarPainelPrestador();
+    } catch (err) {
+      alert(err.message);
+    }
+  });
+
   btnConcluir.addEventListener('click', async () => {
     try {
       await API.concluirAtendimento(chamadoEmFoco.id);
@@ -595,6 +613,7 @@
     `;
     btnIniciar.classList.toggle('oculto', chamado.status !== 'aceito');
     btnConcluir.classList.toggle('oculto', chamado.status === 'aberto');
+    btnCancelarPrestador.classList.toggle('oculto', chamado.status !== 'aceito');
   }
 
   // ---------------- Histórico (compartilhado entre os dois painéis) ----------------

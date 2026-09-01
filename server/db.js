@@ -141,7 +141,7 @@ async function garantirEstrutura() {
   if (Number(totalCategorias[0].total) === 0) {
     await conn.query(
       'INSERT INTO categorias (id, nome) VALUES (1, ?), (2, ?), (3, ?) ON DUPLICATE KEY UPDATE nome = VALUES(nome)',
-      ['Mecanico', 'borracheiro', 'Auto eletrica']
+      ['Mecânico', 'borracheiro', 'Auto Elétrica']
     );
   }
 }

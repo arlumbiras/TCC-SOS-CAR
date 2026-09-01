@@ -79,6 +79,7 @@ const API = (function () {
     iniciarAtendimento: (id) => requisitar(`/chamados/${id}/iniciar`, { method: 'POST' }),
     concluirAtendimento: (id) => requisitar(`/chamados/${id}/concluir`, { method: 'POST' })
     ,
+    cancelarPorPrestador: (id) => requisitar(`/chamados/${id}/cancelar-prestador`, { method: 'POST' }),
     atualizarUsuario: (dados) => requisitar('/auth/atualizar', { method: 'PATCH', body: JSON.stringify(dados) })
   };
 })();
