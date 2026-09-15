@@ -37,7 +37,7 @@ CREATE DATABASE IF NOT EXISTS sos_car
     -- especiais corretamente (o utf8 "puro" do MySQL é uma versão
     -- antiga e incompleta do padrão Unicode).
 
-USE sos_veiculos;
+USE sos_car;
 
 -- ---------------------------------------------------------
 -- Apaga as tabelas se elas já existirem, para dar pra rodar este
@@ -46,6 +46,7 @@ USE sos_veiculos;
 -- último quem é "base" (categoria_servico é referenciada por todo o
 -- resto).
 -- ---------------------------------------------------------
+DROP TABLE IF EXISTS redefinicao_senha;
 DROP TABLE IF EXISTS avaliacao;
 DROP TABLE IF EXISTS chamado;
 DROP TABLE IF EXISTS prestador;
@@ -133,6 +134,23 @@ CREATE TABLE avaliacao (
         FOREIGN KEY (id_chamado) REFERENCES chamado(id),
     CONSTRAINT chk_avaliacao_nota
         CHECK (nota BETWEEN 1 AND 5)
+) ENGINE=InnoDB;
+
+-- ---------------------------------------------------------
+-- TABELA: redefinicao_senha
+-- Token temporário gerado no fluxo "Esqueci minha senha". Como o token
+-- pode pertencer a um cliente OU a um prestador, "tipo_usuario" indica
+-- qual tabela "id_usuario" referencia — não dá para usar uma única
+-- FOREIGN KEY para as duas tabelas ao mesmo tempo, então essa checagem
+-- fica por conta da aplicação.
+-- ---------------------------------------------------------
+CREATE TABLE redefinicao_senha (
+    token           VARCHAR(64) PRIMARY KEY,
+    tipo_usuario    VARCHAR(20) NOT NULL,
+    id_usuario      INT NOT NULL,
+    expira_em       DATETIME NOT NULL,
+    CONSTRAINT chk_redefinicao_tipo
+        CHECK (tipo_usuario IN ('cliente','prestador'))
 ) ENGINE=InnoDB;
 
 -- ---------------------------------------------------------

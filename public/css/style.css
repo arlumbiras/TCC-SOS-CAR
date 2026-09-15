@@ -1,58 +1,72 @@
 /* =================================================================
-   Estilos do SOS Barbie.
+   Estilos do SOS Car — tema "dark premium" roxo/azul.
 
    Tema claro/escuro: as cores nunca são escritas soltas nas regras
    abaixo, sempre através de variáveis CSS (--nome-da-variavel),
    declaradas uma vez em :root (tema claro, padrão) e redeclaradas em
    :root[data-tema='escuro'] com outros valores. Quem decide qual
    conjunto vale é o atributo "data-tema" da tag <html>, controlado por
-   public/js/theme.js. Assim, cada regra de estilo (cor de fundo, borda
-   etc.) é escrita uma única vez, usando a variável — e ela já "sabe"
-   se deve mostrar a cor clara ou escura sozinha.
+   public/js/theme.js. O gradiente de marca (roxo -> azul) é o mesmo
+   nos dois temas — é a "assinatura visual" fixa da marca, usada com
+   moderação (botão principal, aba ativa, logo, nome da marca).
 ================================================================= */
 
 :root {
   color-scheme: light dark; /* avisa o navegador para estilizar coisas nativas (scrollbar, etc.) nos dois temas */
 
-  --rosa-50: #f2f9ff;
-  --rosa-100: #e6f3ff;
-  --rosa-200: #bfe0ff;
-  --rosa-400: #4aa3ff;
-  --rosa-500: #1e88ff;
-  --rosa-600: #0f6be6;
-  --rosa-700: #084f99;
+  --marca-50: #f3f0ff;
+  --marca-100: #e9e2ff;
+  --marca-200: #cfc0ff;
+  --marca-400: #a78bfa;
+  --marca-500: #8b5cf6;
+  --marca-600: #7c3aed;
+  --marca-700: #6d28d9;
+  --gradiente-marca: linear-gradient(135deg, #8b5cf6, #3b82f6);
+  --glow-opacidade: 0.12;
 
-  --texto: #0f2433;
-  --texto-suave: #566f7f;
-  --fundo: var(--rosa-50);
+  --texto: #17152a;
+  --texto-suave: #675f80;
+  --fundo: #f7f6fb;
   --superficie: #ffffff; /* fundo dos cartões, sempre mais claro que o fundo da página */
-  --borda: #dbeafc;
-  --sombra: rgba(16, 54, 94, 0.08);
+  --borda: #e6e1f5;
+  --sombra: rgba(109, 40, 217, 0.1);
 
-  --perigo: #ff0040;
-  --perigo-fundo: #ffe3ea;
-  --sucesso: #00ff88;
-  --sucesso-fundo: #e1f6ec;
+  --perigo: #dc2626;
+  --perigo-fundo: #fee2e2;
+  --sucesso: #16a34a;
+  --sucesso-fundo: #dcfce7;
+  --aviso: #d97706;
+  --aviso-fundo: #fef3c7;
+
+  --fonte: 'Inter', 'Segoe UI', system-ui, -apple-system, Roboto, Arial, sans-serif;
+  --fonte-titulo: 'Sora', var(--fonte);
 }
 
-/* Tema escuro: mesmas variáveis, valores diferentes. Note que a
-   "forma" das regras abaixo (o restante do arquivo) nunca muda — só o
-   valor por trás de cada variável. */
+/* Tema escuro: mesmas variáveis, valores diferentes — fundo quase preto
+   com um leve matiz roxo, cartões um tom acima, sombras viram "glow". */
 :root[data-tema='escuro'] {
-  --texto: #e6f4ff;
-  --texto-suave: #9fc0e8;
-  --fundo: #071428;
-  --superficie: #0f2736;
-  --borda: #123448;
-  --sombra: rgba(0, 0, 0, 0.6);
+  --marca-50: #1c1733;
+  --marca-100: #2a2147;
+  --marca-200: #3d2f66;
+  --marca-400: #b39dfb;
+  --marca-500: #a78bfa;
+  --marca-600: #8b5cf6;
+  --marca-700: #c4b5fd;
+  --glow-opacidade: 0.32;
 
-  --rosa-100: #06233a;
-  --rosa-500: #2a7bff;
-  --rosa-600: #4a90ff;
-  --rosa-700: #6aa7ff;
+  --texto: #f2f0fa;
+  --texto-suave: #9c96b8;
+  --fundo: #0b0a14;
+  --superficie: #14121f;
+  --borda: #262238;
+  --sombra: rgba(139, 92, 246, 0.2);
 
-  --perigo-fundo: #3a1622;
-  --sucesso-fundo: #123526;
+  --perigo: #f87171;
+  --perigo-fundo: #3a1d2b;
+  --sucesso: #4ade80;
+  --sucesso-fundo: #103524;
+  --aviso: #fbbf24;
+  --aviso-fundo: #392a06;
 }
 
 * {
@@ -61,10 +75,16 @@
 
 body {
   margin: 0;
-  font-family: 'Segoe UI', system-ui, -apple-system, Roboto, Arial, sans-serif;
+  font-family: var(--fonte);
   background: var(--fundo);
   color: var(--texto);
   transition: background-color 0.2s ease, color 0.2s ease; /* suaviza a troca de tema */
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3 {
+  font-family: var(--fonte-titulo);
+  letter-spacing: -0.01em;
 }
 
 /* Classe usada em JS (app.js) para esconder elementos por completo,
@@ -89,12 +109,23 @@ body {
 .marca {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 20px;
-  font-weight: 600;
+  gap: 10px;
+  font-family: var(--fonte-titulo);
+  font-size: 19px;
+  font-weight: 700;
+  cursor: pointer;
 }
-.marca strong {
-  color: var(--rosa-600);
+.marca-icone {
+  display: block;
+  flex: none;
+  width: 34px;
+  height: 34px;
+}
+.marca-nome strong {
+  background: var(--gradiente-marca);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 .topo-acoes {
   display: flex;
@@ -108,11 +139,18 @@ body {
   border: 1px solid var(--borda);
   background: var(--fundo);
   color: var(--texto);
-  font-size: 16px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.botao-icone:hover {
+  border-color: var(--marca-400);
+}
+.botao-icone svg {
+  width: 18px;
+  height: 18px;
 }
 /* Contorno visível ao navegar por teclado (Tab), sem aparecer no clique
    do mouse — acessibilidade básica para quem não usa mouse/touch. */
@@ -121,38 +159,130 @@ body {
 .formulario select:focus-visible,
 .formulario textarea:focus-visible,
 button:focus-visible {
-  outline: 2px solid var(--rosa-400);
+  outline: 2px solid var(--marca-400);
   outline-offset: 2px;
 }
 
 /* ---------- Layout geral (largura máxima central, tipo "coluna de app") ---------- */
 .conteudo {
   max-width: 620px;
+  width: 100%;
   margin: 0 auto;
-  padding: 24px 18px 60px;
+  padding: 28px 18px 60px;
+}
+
+/* Cada tela organiza seus próprios cartões em coluna, com espaçamento
+   consistente entre eles — independe de estar dentro de <main> ou ser
+   uma <section> isolada (caso da tela de auth e de configurações). */
+.tela {
   display: flex;
   flex-direction: column;
-  gap: 20px; /* espaço entre os cartões, sem precisar de margin em cada um */
+  gap: 20px;
 }
 
 .cartao {
   background: var(--superficie);
   border: 1px solid var(--borda);
   border-radius: 16px;
-  padding: 22px;
-  box-shadow: 0 4px 16px var(--sombra);
+  padding: 24px;
+  box-shadow: 0 4px 24px var(--sombra);
 }
 .cartao h2 {
   margin-top: 0;
 }
 
-.cartao-auth h1 {
-  margin-bottom: 4px;
-  font-size: 24px;
-}
 .subtitulo {
   color: var(--texto-suave);
   margin-top: 0;
+}
+
+/* ---------- Tela de autenticação: intro + cartão lado a lado em telas largas ----------
+   Dois círculos desfocados (::before/::after) atrás do conteúdo dão um
+   "glow" ambiente de marca — bem sutil no tema claro, mais presente no
+   escuro (--glow-opacidade muda por tema). Puramente decorativo, por
+   isso "aria-hidden" não é necessário (pseudo-elementos não entram na
+   árvore de acessibilidade). */
+#tela-auth {
+  position: relative;
+  overflow: hidden;
+}
+#tela-auth::before,
+#tela-auth::after {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  width: 480px;
+  height: 480px;
+  border-radius: 50%;
+  filter: blur(110px);
+  opacity: var(--glow-opacidade);
+  pointer-events: none;
+}
+#tela-auth::before {
+  background: #8b5cf6;
+  top: -200px;
+  left: -180px;
+}
+#tela-auth::after {
+  background: #3b82f6;
+  bottom: -220px;
+  right: -180px;
+}
+.conteudo-auth {
+  position: relative;
+  z-index: 1;
+  padding-top: 40px;
+}
+.auth-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 36px;
+}
+.auth-logo {
+  width: 52px;
+  height: 52px;
+  margin-bottom: 18px;
+  filter: drop-shadow(0 10px 24px rgba(124, 58, 237, 0.35));
+}
+.auth-intro h1 {
+  margin: 0 0 10px;
+  font-size: 28px;
+  font-weight: 800;
+}
+.auth-intro .subtitulo {
+  margin-bottom: 24px;
+  font-size: 15px;
+}
+.auth-destaques {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.destaque {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--texto-suave);
+}
+.destaque-icone {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--marca-100);
+  color: var(--marca-600);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.destaque-icone svg {
+  width: 18px;
+  height: 18px;
 }
 
 /* ---------- Segmentado (as "abas" tipo pílula: cliente/prestador, entrar/cadastrar) ---------- */
@@ -162,10 +292,10 @@ button:focus-visible {
   border: 1px solid var(--borda);
   border-radius: 999px; /* valor bem alto = vira "pílula" (cantos totalmente arredondados) */
   padding: 4px;
-  margin: 16px 0 10px;
+  margin: 4px 0 10px;
 }
 .segmentado-secundario {
-  margin-bottom: 20px;
+  margin-bottom: 22px;
 }
 .segmentado-opcao {
   flex: 1; /* os botões dividem o espaço igualmente */
@@ -177,11 +307,13 @@ button:focus-visible {
   font: inherit;
   font-weight: 600;
   color: var(--texto-suave);
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 /* Classe alternada via JS (app.js) para marcar qual opção está ativa. */
 .segmentado-opcao.ativo {
-  background: var(--rosa-500);
+  background: var(--gradiente-marca);
   color: #fff;
+  box-shadow: 0 4px 14px rgba(124, 58, 237, 0.35);
 }
 
 /* ---------- Formulários ---------- */
@@ -210,6 +342,12 @@ button:focus-visible {
   border: 1px solid var(--borda);
   background: var(--fundo);
   color: var(--texto);
+  transition: border-color 0.15s ease;
+}
+.formulario input:focus,
+.formulario select:focus,
+.formulario textarea:focus {
+  border-color: var(--marca-400);
 }
 .formulario textarea {
   resize: vertical; /* usuário só pode redimensionar para cima/baixo, não estica o layout na horizontal */
@@ -220,29 +358,50 @@ button:focus-visible {
 .botao-perigo {
   font: inherit;
   font-weight: 700;
-  padding: 11px 16px;
-  border-radius: 12px;
+  font-size: 14px;
+  padding: 11px 18px;
+  border-radius: 11px;
   cursor: pointer;
   border: 1px solid transparent;
+  transition: filter 0.15s ease, background-color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease, box-shadow 0.15s ease;
+}
+.botao-com-icone {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.botao-primario svg,
+.botao-secundario svg,
+.botao-perigo svg {
+  width: 17px;
+  height: 17px;
+  flex: none;
 }
 .botao-primario {
-  background: var(--rosa-500);
+  background: var(--gradiente-marca);
   color: #fff;
+  box-shadow: 0 8px 20px rgba(124, 58, 237, 0.3);
 }
 .botao-primario:hover {
-  background: var(--rosa-600);
+  filter: brightness(1.08);
+  box-shadow: 0 10px 26px rgba(124, 58, 237, 0.4);
 }
-.botao-primario:disabled {
+.botao-primario:disabled,
+.botao-secundario:disabled,
+.botao-perigo:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+  box-shadow: none;
+  filter: none;
 }
 .botao-secundario {
   background: transparent;
-  border-color: var(--rosa-400);
-  color: var(--rosa-600);
+  border-color: var(--marca-400);
+  color: var(--marca-600);
 }
 .botao-secundario:hover {
-  background: var(--rosa-100);
+  background: var(--marca-100);
 }
 .botao-perigo {
   background: var(--perigo-fundo);
@@ -270,21 +429,23 @@ button:focus-visible {
 /* ---------- Progresso do chamado (trilha "Aberto -> Aceito -> A caminho -> Concluído") ----------
    Truque de CSS: "counter-reset"/"counter-increment"/"content: counter(...)"
    numera os <li> automaticamente (1, 2, 3, 4) sem precisar escrever o
-   número no HTML nem em JS — o próprio CSS conta. */
+   número no HTML nem em JS — o próprio CSS conta. Uma linha conectando
+   os círculos (::after) reforça a ideia de trilha/etapas percorridas. */
 .progresso {
   list-style: none;
   display: flex;
   padding: 0;
-  margin: 0 0 18px;
+  margin: 4px 0 20px;
   counter-reset: passo;
 }
 .progresso li {
   flex: 1;
   text-align: center;
   font-size: 12px;
+  font-weight: 600;
   color: var(--texto-suave);
   position: relative;
-  padding-top: 30px; /* abre espaço para o "círculo numerado" (::before) encaixar acima do texto */
+  padding-top: 34px; /* abre espaço para o "círculo numerado" (::before) encaixar acima do texto */
 }
 .progresso li::before {
   counter-increment: passo;
@@ -293,8 +454,9 @@ button:focus-visible {
   top: 0;
   left: 50%;
   transform: translateX(-50%); /* centraliza o círculo horizontalmente sobre o texto */
-  width: 22px;
-  height: 22px;
+  z-index: 2;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   background: var(--borda);
   color: var(--superficie);
@@ -304,15 +466,32 @@ button:focus-visible {
   align-items: center;
   justify-content: center;
 }
+/* Linha conectando o centro de um círculo ao próximo, atrás deles (z-index menor). */
+.progresso li:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  top: 11px;
+  left: calc(50% + 12px);
+  width: calc(100% - 24px);
+  height: 2px;
+  background: var(--borda);
+}
 /* Classes alternadas via JS (app.js) conforme o status do chamado. */
 .progresso li.concluido::before {
-  background: var(--rosa-500);
+  background: var(--marca-500);
   color: #fff;
 }
+.progresso li.concluido:not(:last-child)::after {
+  background: var(--marca-500);
+}
+.progresso li.atual {
+  color: var(--texto);
+}
 .progresso li.atual::before {
-  background: var(--rosa-600);
+  background: var(--marca-600);
   color: #fff;
-  box-shadow: 0 0 0 4px var(--rosa-100); /* "auréola" destacando a etapa atual */
+  box-shadow: 0 0 0 4px var(--marca-100); /* "auréola" destacando a etapa atual */
 }
 .progresso li.cancelado::before {
   content: '×'; /* substitui o número pelo "x" quando o chamado foi cancelado */
@@ -325,7 +504,7 @@ button:focus-visible {
 .detalhes {
   display: grid;
   grid-template-columns: auto 1fr; /* 1ª coluna do tamanho do texto, 2ª ocupa o resto */
-  gap: 6px 14px;
+  gap: 8px 14px;
   margin: 0 0 16px;
   font-size: 14px;
 }
@@ -350,9 +529,10 @@ button:focus-visible {
 .estrela {
   cursor: pointer;
   color: var(--borda); /* estrela "apagada" por padrão */
+  transition: color 0.1s ease;
 }
 .estrela.ativa {
-  color: var(--rosa-500); /* marcada via JS conforme o clique do usuário */
+  color: var(--marca-500); /* marcada via JS conforme o clique do usuário */
 }
 
 /* ---------- Disponibilidade do prestador (interruptor liga/desliga) ----------
@@ -423,6 +603,10 @@ button:focus-visible {
   align-items: center;
   gap: 12px;
   font-size: 13.5px;
+  transition: border-color 0.15s ease;
+}
+.item-chamado:hover {
+  border-color: var(--marca-400);
 }
 .item-chamado-info strong {
   display: block;
@@ -437,8 +621,8 @@ button:focus-visible {
   font-weight: 700;
   padding: 3px 9px;
   border-radius: 999px;
-  background: var(--rosa-100);
-  color: var(--rosa-700);
+  background: var(--marca-100);
+  color: var(--marca-700);
   white-space: nowrap;
 }
 .selo-cancelado {
@@ -450,27 +634,392 @@ button:focus-visible {
   color: var(--sucesso);
 }
 
+/* Estado vazio (ex.: "nenhum chamado disponível", "nada por aqui ainda") */
+.estado-vazio {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+  padding: 30px 12px;
+  color: var(--texto-suave);
+  font-size: 13px;
+  margin: 0;
+}
+.estado-vazio-icone {
+  width: 32px;
+  height: 32px;
+  opacity: 0.55;
+}
+
 .acoes {
   display: flex;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .rodape {
   text-align: center;
   color: var(--texto-suave);
   font-size: 12px;
+  padding: 24px 20px;
+}
+
+/* ---------- Notificações (toast), substituem alert() nativo ---------- */
+.toast-container {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: min(360px, calc(100vw - 32px));
+}
+.toast {
+  background: var(--superficie);
+  border: 1px solid var(--borda);
+  border-left: 4px solid var(--marca-500);
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 13.5px;
+  box-shadow: 0 10px 28px var(--sombra);
+  animation: toast-entrada 0.18s ease;
+}
+.toast-erro {
+  border-left-color: var(--perigo);
+}
+.toast-sucesso {
+  border-left-color: var(--sucesso);
+}
+@keyframes toast-entrada {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ---------- Modal de confirmação, substitui confirm() nativo ---------- */
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(11, 10, 20, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: 20px;
+  z-index: 1000;
+}
+.modal-conteudo {
+  background: var(--superficie);
+  border: 1px solid var(--borda);
+  border-radius: 16px;
+  padding: 22px;
+  max-width: 360px;
+  width: 100%;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.35);
+}
+.modal-conteudo p {
+  margin: 0 0 20px;
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+.modal-acoes {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 /* Em telas estreitas (celular), os itens de lista empilham em vez de
    ficar lado a lado, para não espremer o botão "Aceitar". */
 @media (max-width: 480px) {
   .conteudo {
-    padding: 18px 12px 48px;
+    padding: 20px 14px 48px;
   }
   .item-chamado,
   .item-historico {
     flex-direction: column;
     align-items: stretch;
+  }
+  .toast-container {
+    left: 12px;
+    right: 12px;
+    top: 12px;
+    max-width: none;
+  }
+}
+
+/* ---------- Tela de carregamento (splash inicial) ---------- */
+.tela-carregamento {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  background: var(--fundo);
+}
+.spinner {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 3px solid var(--borda);
+  border-top-color: var(--marca-500);
+  animation: girar 0.7s linear infinite;
+}
+@keyframes girar {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Largura um pouco mais estreita que ".conteudo", para telas de um
+   único cartão de formulário (esqueci senha, redefinir senha,
+   configurações, páginas institucionais) — fica mais confortável de
+   ler do que a largura de "painel" usada no cliente/prestador. */
+.conteudo-estreito {
+  max-width: 480px;
+}
+
+.botao-link {
+  background: none;
+  border: none;
+  color: var(--marca-600);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  align-self: flex-start;
+  padding: 0;
+}
+.botao-link:hover {
+  text-decoration: underline;
+}
+
+.mensagem-sucesso {
+  background: var(--sucesso-fundo);
+  color: var(--sucesso);
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 13.5px;
+}
+
+/* Utilitário genérico de "pilha vertical com espaçamento" — mesma
+   fórmula de ".tela", usado para blocos que não são telas de topo (ex.:
+   o conteúdo do painel admin depois do login). */
+.pilha {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* ---------- Mapa (Leaflet + OpenStreetMap) ---------- */
+.mapa-caixa {
+  height: 220px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--borda);
+  margin-bottom: 16px;
+  background: var(--fundo);
+}
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background: var(--superficie);
+  color: var(--texto);
+}
+
+/* ---------- Painel administrativo ---------- */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 12px;
+}
+.stat-card {
+  background: var(--superficie);
+  border: 1px solid var(--borda);
+  border-radius: 14px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-shadow: 0 4px 16px var(--sombra);
+}
+.stat-numero {
+  font-family: var(--fonte-titulo);
+  font-size: 26px;
+  font-weight: 800;
+}
+.stat-rotulo {
+  font-size: 12.5px;
+  color: var(--texto-suave);
+}
+
+.cartao-cabecalho {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.cartao-cabecalho h2 {
+  margin: 0;
+}
+.admin-filtro {
+  font: inherit;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--borda);
+  background: var(--fundo);
+  color: var(--texto);
+}
+
+.tabela-caixa {
+  overflow-x: auto;
+}
+.tabela {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+.tabela th,
+.tabela td {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--borda);
+  white-space: nowrap;
+}
+.tabela th {
+  color: var(--texto-suave);
+  font-weight: 600;
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.tabela tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.lista-categorias {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.item-categoria {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--borda);
+  border-radius: 10px;
+  font-size: 13.5px;
+}
+.categoria-nome {
+  font-weight: 600;
+}
+.categoria-input {
+  font: inherit;
+  flex: 1;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--borda);
+  background: var(--fundo);
+  color: var(--texto);
+}
+.botao-pequeno {
+  padding: 6px 12px;
+  font-size: 12.5px;
+  border-radius: 8px;
+}
+
+/* ---------- Avaliações do prestador ---------- */
+.avaliacao-resumo {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 14px;
+  font-size: 15px;
+}
+.avaliacao-resumo strong {
+  font-size: 20px;
+  color: var(--marca-600);
+}
+
+/* ---------- Ajuda / FAQ (usa <details>/<summary> nativos) ---------- */
+.faq-item {
+  border-bottom: 1px solid var(--borda);
+  padding: 12px 0;
+}
+.faq-item:last-of-type {
+  border-bottom: none;
+}
+.faq-item summary {
+  cursor: pointer;
+  font-weight: 600;
+  list-style: none;
+}
+.faq-item summary::-webkit-details-marker {
+  display: none;
+}
+.faq-item summary::before {
+  content: '+';
+  display: inline-block;
+  width: 18px;
+  color: var(--marca-500);
+  font-weight: 700;
+}
+.faq-item[open] summary::before {
+  content: '−';
+}
+.faq-item p {
+  margin: 10px 0 0 18px;
+  color: var(--texto-suave);
+  font-size: 14px;
+}
+
+/* ---------- Links institucionais no rodapé ---------- */
+.rodape-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 16px;
+  margin-bottom: 10px;
+}
+.rodape-links a {
+  color: var(--texto-suave);
+  text-decoration: none;
+  font-size: 12.5px;
+}
+.rodape-links a:hover {
+  color: var(--marca-600);
+  text-decoration: underline;
+}
+
+/* Em telas largas, a tela de autenticação ganha duas colunas: a
+   proposta de valor à esquerda e o cartão de login/cadastro à direita. */
+@media (min-width: 960px) {
+  .conteudo-auth {
+    max-width: 1040px;
+    padding-top: 64px;
+  }
+  .auth-layout {
+    flex-direction: row;
+    align-items: center;
+    gap: 64px;
+  }
+  .auth-intro,
+  .cartao-auth {
+    flex: 1;
+  }
+  .auth-intro h1 {
+    font-size: 34px;
   }
 }

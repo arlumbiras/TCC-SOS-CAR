@@ -59,11 +59,16 @@ const API = (function () {
     definirToken,
 
     categorias: () => requisitar('/categorias'),
+    geocodificar: (endereco) =>
+      requisitar(`/localizacao/geocodificar?endereco=${encodeURIComponent(endereco)}`),
 
     registrar: (dados) => requisitar('/auth/registrar', { method: 'POST', body: JSON.stringify(dados) }),
     login: (dados) => requisitar('/auth/login', { method: 'POST', body: JSON.stringify(dados) }),
     logout: () => requisitar('/auth/logout', { method: 'POST' }),
     quemSouEu: () => requisitar('/auth/me'),
+    esqueciSenha: (dados) => requisitar('/auth/esqueci-senha', { method: 'POST', body: JSON.stringify(dados) }),
+    redefinirSenha: (dados) => requisitar('/auth/redefinir-senha', { method: 'POST', body: JSON.stringify(dados) }),
+    loginAdmin: (dados) => requisitar('/auth/login-admin', { method: 'POST', body: JSON.stringify(dados) }),
 
     abrirChamado: (dados) => requisitar('/chamados', { method: 'POST', body: JSON.stringify(dados) }),
     chamadoAtual: () => requisitar('/chamados/atual'),
@@ -80,6 +85,16 @@ const API = (function () {
     concluirAtendimento: (id) => requisitar(`/chamados/${id}/concluir`, { method: 'POST' })
     ,
     cancelarPorPrestador: (id) => requisitar(`/chamados/${id}/cancelar-prestador`, { method: 'POST' }),
-    atualizarUsuario: (dados) => requisitar('/auth/atualizar', { method: 'PATCH', body: JSON.stringify(dados) })
+    atualizarUsuario: (dados) => requisitar('/auth/atualizar', { method: 'PATCH', body: JSON.stringify(dados) }),
+
+    minhasAvaliacoes: () => requisitar('/prestador/me/avaliacoes'),
+
+    adminEstatisticas: () => requisitar('/admin/estatisticas'),
+    adminUsuarios: () => requisitar('/admin/usuarios'),
+    adminChamados: (status) => requisitar('/admin/chamados' + (status ? `?status=${encodeURIComponent(status)}` : '')),
+    adminCancelarChamado: (id) => requisitar(`/admin/chamados/${id}/cancelar`, { method: 'POST' }),
+    adminCategorias: () => requisitar('/admin/categorias'),
+    adminRenomearCategoria: (id, nome) =>
+      requisitar(`/admin/categorias/${id}`, { method: 'PATCH', body: JSON.stringify({ nome }) })
   };
 })();

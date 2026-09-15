@@ -1,11 +1,16 @@
 const mysql = require('mysql2/promise');
 
+// Credenciais vêm de variáveis de ambiente (DB_HOST, DB_PORT, DB_USER,
+// DB_PASSWORD, DB_NAME). Os valores fixos abaixo são só um fallback para
+// não quebrar quem já rodava o projeto sem configurar nada — em produção,
+// defina as variáveis de ambiente e, principalmente, troque a senha do
+// banco (ela não deveria nunca ter ficado hardcoded/versionada aqui).
 const DB_CONFIG = {
-  host: '212.85.3.212',
-  port: 3306,
-  user: 'u815496249_soscar',
-  password: 'Sda481@sud',
-  database: 'u815496249_soscar',
+  host: process.env.DB_HOST || '212.85.3.212',
+  port: Number(process.env.DB_PORT) || 3306,
+  user: process.env.DB_USER || 'u815496249_soscar',
+  password: process.env.DB_PASSWORD || 'Sda481@sud',
+  database: process.env.DB_NAME || 'u815496249_soscar',
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
@@ -17,7 +22,8 @@ const db = {
   clientes: [],
   prestadores: [],
   chamados: [],
-  avaliacoes: []
+  avaliacoes: [],
+  redefinicoesSenha: []
 };
 
 let pool;
@@ -51,6 +57,7 @@ function aplicarEstadoPadrao() {
   db.prestadores = [];
   db.chamados = [];
   db.avaliacoes = [];
+  db.redefinicoesSenha = [];
   modoFallback = true;
 }
 
@@ -130,6 +137,12 @@ async function garantirEstrutura() {
       nota INT NOT NULL,
       comentario TEXT NULL,
       data_avaliacao DATETIME NOT NULL
+    )`,
+    `CREATE TABLE IF NOT EXISTS redefinicoes_senha (
+      token VARCHAR(64) PRIMARY KEY,
+      tipo VARCHAR(20) NOT NULL,
+      usuario_id VARCHAR(36) NOT NULL,
+      expira_em DATETIME NOT NULL
     )`
   ];
 
@@ -137,13 +150,15 @@ async function garantirEstrutura() {
     await conn.query(consulta);
   }
 
-  const [totalCategorias] = await conn.query('SELECT COUNT(*) AS total FROM categorias');
-  if (Number(totalCategorias[0].total) === 0) {
-    await conn.query(
-      'INSERT INTO categorias (id, nome) VALUES (1, ?), (2, ?), (3, ?) ON DUPLICATE KEY UPDATE nome = VALUES(nome)',
-      ['Mecânico', 'borracheiro', 'Auto Elétrica']
-    );
-  }
+  // Sempre reafirma o nome oficial das 3 categorias (id fixo), mesmo que
+  // elas já existam — corrige automaticamente qualquer nome gravado antes
+  // sem acento/capitalização errada (ex.: "Mecanico", "auto eletrica"),
+  // sem duplicar linhas nem afetar chamados/prestadores já vinculados ao
+  // mesmo id.
+  await conn.query(
+    'INSERT INTO categorias (id, nome) VALUES (1, ?), (2, ?), (3, ?) ON DUPLICATE KEY UPDATE nome = VALUES(nome)',
+    ['Mecânico', 'Borracheiro', 'Auto Elétrica']
+  );
 }
 
 function normalizarCliente(row) {
@@ -201,6 +216,15 @@ function normalizarAvaliacao(row) {
   };
 }
 
+function normalizarRedefinicao(row) {
+  return {
+    token: row.token,
+    tipo: row.tipo,
+    usuarioId: row.usuario_id,
+    expiraEm: row.expira_em
+  };
+}
+
 async function carregar() {
   try {
     await garantirEstrutura();
@@ -211,6 +235,9 @@ async function carregar() {
     const [prestadores] = await conn.query('SELECT * FROM prestadores ORDER BY data_cadastro');
     const [chamados] = await conn.query('SELECT * FROM chamados ORDER BY data_abertura');
     const [avaliacoes] = await conn.query('SELECT * FROM avaliacoes ORDER BY data_avaliacao');
+    // Tokens de redefinição já vencidos não precisam ser carregados — o
+    // próprio DELETE em salvar() os limpa na próxima escrita.
+    const [redefinicoes] = await conn.query('SELECT * FROM redefinicoes_senha WHERE expira_em > NOW()');
 
     modoFallback = false;
     Object.assign(db, {
@@ -218,7 +245,8 @@ async function carregar() {
       clientes: clientes.map(normalizarCliente),
       prestadores: prestadores.map(normalizarPrestador),
       chamados: chamados.map(normalizarChamado),
-      avaliacoes: avaliacoes.map(normalizarAvaliacao)
+      avaliacoes: avaliacoes.map(normalizarAvaliacao),
+      redefinicoesSenha: redefinicoes.map(normalizarRedefinicao)
     });
 
     return db;
@@ -240,6 +268,7 @@ async function salvar() {
     await conn.query('START TRANSACTION');
 
     try {
+      await conn.query('DELETE FROM redefinicoes_senha');
       await conn.query('DELETE FROM avaliacoes');
       await conn.query('DELETE FROM chamados');
       await conn.query('DELETE FROM prestadores');
@@ -284,6 +313,15 @@ async function salvar() {
           await conn.query(
             'INSERT INTO avaliacoes (id, chamado_id, nota, comentario, data_avaliacao) VALUES (?, ?, ?, ?, ?)',
             [avaliacao.id, avaliacao.chamadoId, avaliacao.nota, avaliacao.comentario ?? null, paraDataHoraMysql(avaliacao.dataAvaliacao)]
+          );
+        }
+      }
+
+      if (Array.isArray(db.redefinicoesSenha) && db.redefinicoesSenha.length > 0) {
+        for (const redefinicao of db.redefinicoesSenha) {
+          await conn.query(
+            'INSERT INTO redefinicoes_senha (token, tipo, usuario_id, expira_em) VALUES (?, ?, ?, ?)',
+            [redefinicao.token, redefinicao.tipo, redefinicao.usuarioId, paraDataHoraMysql(redefinicao.expiraEm)]
           );
         }
       }

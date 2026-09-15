@@ -1,10 +1,11 @@
 {
-  "name": "sos-barbie",
+  "name": "sos-car",
   "version": "1.0.0",
   "private": true,
-  "description": "MVP do TCC - Sistema de SOS para Veiculos Automotores (SOS Barbie)",
+  "description": "MVP do TCC - Sistema de SOS para Veículos Automotores (SOS Car)",
   "main": "server/server.js",
   "scripts": {
+    "start": "node server/server.js",
     "dev": "node server/server.js"
   },
   "engines": {
@@ -13,6 +14,7 @@
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "express": "^4.19.2",
-    "mysql2": "^3.12.0"
+    "mysql2": "^3.12.0",
+    "nodemailer": "^9.1.1"
   }
 }

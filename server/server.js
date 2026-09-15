@@ -1,11 +1,12 @@
 // =================================================================
-// API do SOS Barbie — servidor Express (Node.js).
+// API do SOS Car — servidor Express (Node.js).
 //
 // Este arquivo define todas as rotas HTTP da aplicação: cadastro/login,
 // abertura de chamados, aceite por prestadores, andamento do
-// atendimento e avaliação. As regras de negócio do TCC (documentadas em
-// banco-dados-explicacao.md) são implementadas aqui, na camada da API,
-// já que o "banco" (db.js) é só um arquivo JSON sem lógica própria.
+// atendimento e avaliação. As regras de negócio do TCC (o modelo de
+// dados está documentado em sos_veiculos_mysql.sql, na raiz do projeto)
+// são implementadas aqui, na camada da API — o db.js só cuida de
+// carregar/gravar esses dados no MySQL.
 // =================================================================
 const express = require('express');
 const path = require('path');
@@ -16,9 +17,24 @@ const os = require('os');
 const { db, salvar, inicializarBanco } = require('./db');
 const { criarSessao, encerrarSessao, autenticar } = require('./auth-middleware');
 const { distanciaKm } = require('./utils/distancia');
+const { enviarEmailRedefinicao } = require('./email');
+const { geocodificar } = require('./geocodificacao');
 
 const app = express();
 const PORTA = process.env.PORT || 3000;
+
+// Conta única de administrador, sem tela pública de cadastro — só existe
+// via estas duas variáveis de ambiente. Os valores abaixo são apenas um
+// fallback para não travar quem sobe o projeto sem configurar nada (igual
+// ao espírito do fallback de banco em server/db.js): troque-os em
+// produção definindo ADMIN_EMAIL/ADMIN_SENHA antes de rodar `npm start`.
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@soscar.com';
+const ADMIN_SENHA = process.env.ADMIN_SENHA || 'admin123';
+if (!process.env.ADMIN_EMAIL || !process.env.ADMIN_SENHA) {
+  console.warn(
+    `Usando credenciais padrão de administrador (${ADMIN_EMAIL} / ${ADMIN_SENHA}). Defina ADMIN_EMAIL e ADMIN_SENHA antes de usar em produção.`
+  );
+}
 
 function paraDataHoraMysql(valor = new Date()) {
   const data = new Date(valor);
@@ -34,6 +50,19 @@ function paraDataHoraMysql(valor = new Date()) {
   const segundos = String(data.getSeconds()).padStart(2, '0');
 
   return `${ano}-${mes}-${dia} ${horas}:${minutos}:${segundos}`;
+}
+
+function coordenadasValidas(latitude, longitude) {
+  return (
+    typeof latitude === 'number' &&
+    typeof longitude === 'number' &&
+    Number.isFinite(latitude) &&
+    Number.isFinite(longitude) &&
+    latitude >= -90 &&
+    latitude <= 90 &&
+    longitude >= -180 &&
+    longitude <= 180
+  );
 }
 
 // express.json() lê o corpo das requisições (ex.: os dados de um
@@ -56,6 +85,24 @@ app.get('/api/categorias', (req, res) => {
   res.json(db.categorias);
 });
 
+app.get('/api/localizacao/geocodificar', async (req, res) => {
+  const endereco = typeof req.query.endereco === 'string' ? req.query.endereco : '';
+  if (endereco.trim().length < 5) {
+    return res.status(400).json({ erro: 'Informe um endereço válido para localizar.' });
+  }
+
+  try {
+    const localizacao = await geocodificar(endereco);
+    if (!localizacao) {
+      return res.status(404).json({ erro: 'Endereço não encontrado. Confira os dados informados.' });
+    }
+    res.json(localizacao);
+  } catch (erro) {
+    console.error('Falha na geocodificação:', erro.message);
+    res.status(502).json({ erro: 'Não foi possível localizar o endereço agora. Tente novamente.' });
+  }
+});
+
 // ---------------------------------------------------------------
 // Autenticação
 // ---------------------------------------------------------------
@@ -71,7 +118,16 @@ app.post('/api/auth/registrar', async (req, res) => {
   if (!['cliente', 'prestador'].includes(tipo)) {
     return res.status(400).json({ erro: 'Tipo de usuário inválido.' });
   }
-  if (!nome || !email || !senha || !cpf) {
+  if (
+    typeof nome !== 'string' ||
+    !nome.trim() ||
+    typeof email !== 'string' ||
+    !email.trim() ||
+    typeof senha !== 'string' ||
+    senha.length < 4 ||
+    typeof cpf !== 'string' ||
+    !cpf.trim()
+  ) {
     return res.status(400).json({ erro: 'Preencha nome, email, senha e CPF.' });
   }
   if (tipo === 'prestador' && !db.categorias.some((c) => c.id === Number(categoriaId))) {
@@ -105,8 +161,8 @@ app.post('/api/auth/registrar', async (req, res) => {
     dataCadastro: paraDataHoraMysql()
   };
 
-  // Prestador tem campos extras que cliente não tem (ver
-  // banco-dados-explicacao.md, seção 3.3): categoria, disponibilidade e
+  // Prestador tem campos extras que cliente não tem (ver tabela
+  // "prestador" em sos_veiculos_mysql.sql): categoria, disponibilidade e
   // localização atual.
   if (tipo === 'prestador') {
     usuario.categoriaId = Number(categoriaId);
@@ -116,7 +172,7 @@ app.post('/api/auth/registrar', async (req, res) => {
   }
 
   colecao.push(usuario); // "INSERT" na tabela em memória
-  salvar(); // grava a mudança no arquivo data/db.json
+  salvar(); // persiste a mudança no MySQL (ou mantém só em memória, se o banco estiver indisponível)
 
   const token = criarSessao(tipo, usuario.id);
   // "paraPublico" remove a senhaHash antes de devolver o usuário — o
@@ -177,6 +233,63 @@ app.patch('/api/auth/atualizar', autenticar(), async (req, res) => {
   res.json(paraPublico(req.sessao.tipo, usuario));
 });
 
+// Pede a redefinição de senha: gera um token válido por 1 hora e envia
+// por e-mail (ver server/email.js). Responde sempre com sucesso
+// genérico, exista ou não o e-mail informado — evita que alguém use esta
+// rota para descobrir quais e-mails estão cadastrados no sistema.
+app.post('/api/auth/esqueci-senha', async (req, res) => {
+  const { tipo, email } = req.body;
+  const colecao = tipo === 'cliente' ? db.clientes : tipo === 'prestador' ? db.prestadores : null;
+  const usuario = colecao && colecao.find((u) => u.email === email);
+
+  if (usuario) {
+    const token = crypto.randomUUID();
+    const expiraEm = new Date(Date.now() + 60 * 60 * 1000); // 1 hora
+    db.redefinicoesSenha = db.redefinicoesSenha.filter((r) => r.usuarioId !== usuario.id);
+    db.redefinicoesSenha.push({ token, tipo, usuarioId: usuario.id, expiraEm: paraDataHoraMysql(expiraEm) });
+    salvar();
+    await enviarEmailRedefinicao({ paraEmail: usuario.email, nome: usuario.nome, tipo, token });
+  }
+
+  res.json({ mensagem: 'Se o email informado estiver cadastrado, enviaremos um link de redefinição.' });
+});
+
+// Conclui a redefinição: valida o token (existe e não expirou) e troca a
+// senha. O token é descartado logo em seguida, funcione ou não — um
+// token só pode ser usado uma vez.
+app.post('/api/auth/redefinir-senha', async (req, res) => {
+  const { token, novaSenha } = req.body;
+  const redefinicao = db.redefinicoesSenha.find((r) => r.token === token);
+
+  if (!redefinicao || new Date(redefinicao.expiraEm) < new Date()) {
+    return res.status(400).json({ erro: 'Link de redefinição inválido ou expirado. Peça um novo.' });
+  }
+  if (!novaSenha || novaSenha.length < 4) {
+    return res.status(400).json({ erro: 'A nova senha deve ter pelo menos 4 caracteres.' });
+  }
+
+  const usuario = buscarUsuario(redefinicao.tipo, redefinicao.usuarioId);
+  if (!usuario) return res.status(404).json({ erro: 'Usuário não encontrado.' });
+
+  usuario.senhaHash = await bcrypt.hash(novaSenha, 10);
+  db.redefinicoesSenha = db.redefinicoesSenha.filter((r) => r.token !== token);
+  salvar();
+
+  res.json({ mensagem: 'Senha redefinida com sucesso.' });
+});
+
+// Login exclusivo do administrador — não existe cadastro público para
+// este tipo de usuário, só as credenciais fixas definidas por variável
+// de ambiente (ver ADMIN_EMAIL/ADMIN_SENHA acima).
+app.post('/api/auth/login-admin', (req, res) => {
+  const { email, senha } = req.body;
+  if (email !== ADMIN_EMAIL || senha !== ADMIN_SENHA) {
+    return res.status(401).json({ erro: 'Email ou senha incorretos.' });
+  }
+  const token = criarSessao('admin', 'admin');
+  res.json({ token, usuario: { id: 'admin', nome: 'Administrador' } });
+});
+
 // ---------------------------------------------------------------
 // Prestador: disponibilidade e localização
 // ---------------------------------------------------------------
@@ -191,11 +304,36 @@ app.patch('/api/prestador/disponibilidade', autenticar(['prestador']), (req, res
   const { disponivel, latitude, longitude } = req.body;
 
   if (typeof disponivel === 'boolean') prestador.disponivel = disponivel;
-  if (typeof latitude === 'number') prestador.latitude = latitude;
-  if (typeof longitude === 'number') prestador.longitude = longitude;
+  if (latitude !== undefined || longitude !== undefined) {
+    if (!coordenadasValidas(latitude, longitude)) {
+      return res.status(400).json({ erro: 'Informe latitude e longitude válidas.' });
+    }
+    prestador.latitude = latitude;
+    prestador.longitude = longitude;
+  }
 
   salvar();
   res.json(paraPublico('prestador', prestador));
+});
+
+// Perfil de avaliações do próprio prestador: nota média, total de
+// avaliações e a lista de comentários recebidos (mais recente primeiro)
+// — usada na tela "Minhas avaliações" do painel do prestador.
+app.get('/api/prestador/me/avaliacoes', autenticar(['prestador']), (req, res) => {
+  const { media, total } = calcularNotaPrestador(req.sessao.id);
+
+  const avaliacoes = db.avaliacoes
+    .map((a) => ({ avaliacao: a, chamado: db.chamados.find((c) => c.id === a.chamadoId) }))
+    .filter(({ chamado }) => chamado && chamado.prestadorId === req.sessao.id)
+    .map(({ avaliacao, chamado }) => ({
+      nota: avaliacao.nota,
+      comentario: avaliacao.comentario,
+      data: avaliacao.dataAvaliacao,
+      clienteNome: buscarUsuario('cliente', chamado.clienteId)?.nome
+    }))
+    .sort((a, b) => new Date(b.data) - new Date(a.data));
+
+  res.json({ media, total, avaliacoes });
 });
 
 // ---------------------------------------------------------------
@@ -210,7 +348,7 @@ app.post('/api/chamados', autenticar(['cliente']), (req, res) => {
   if (!db.categorias.some((c) => c.id === Number(categoriaId))) {
     return res.status(400).json({ erro: 'Categoria inválida.' });
   }
-  if (typeof latitude !== 'number' || typeof longitude !== 'number') {
+  if (!coordenadasValidas(latitude, longitude)) {
     return res.status(400).json({ erro: 'Informe a localização (latitude/longitude).' });
   }
 
@@ -311,9 +449,20 @@ app.post('/api/chamados/:id/aceitar', autenticar(['prestador']), (req, res) => {
 // lista de chamados disponíveis, ou a tela de acompanhamento.
 app.get('/api/chamados/atual', autenticar(), (req, res) => {
   const emAndamento = ['aberto', 'aceito', 'em_andamento'];
+
+  // Para o cliente, um chamado recém-concluído e ainda sem avaliação também
+  // conta como "atual": é o que mantém a tela de acompanhamento (com a
+  // trilha de progresso e o formulário de avaliação) visível por tempo
+  // suficiente para ele avaliar, em vez de o chamado sumir direto para o
+  // histórico assim que o prestador conclui o atendimento.
   const chamado =
     req.sessao.tipo === 'cliente'
-      ? db.chamados.find((c) => c.clienteId === req.sessao.id && emAndamento.includes(c.status))
+      ? db.chamados.find(
+          (c) =>
+            c.clienteId === req.sessao.id &&
+            (emAndamento.includes(c.status) ||
+              (c.status === 'concluido' && !db.avaliacoes.some((a) => a.chamadoId === c.id)))
+        )
       : db.chamados.find((c) => c.prestadorId === req.sessao.id && emAndamento.includes(c.status));
 
   res.json(chamado ? montarChamado(chamado) : null);
@@ -347,7 +496,6 @@ app.post('/api/chamados/:id/concluir', autenticar(['prestador']), (req, res) => 
   res.json(montarChamado(chamado));
 });
 
-// Cliente cancela o próprio chamado — só é permitido enquanto nenhum
 // Cliente cancela o próprio chamado — permitido enquanto ninguém aceitou
 // (status "aberto") ou até 1 minuto após o aceite pelo prestador.
 app.post('/api/chamados/:id/cancelar', autenticar(['cliente']), (req, res) => {
@@ -452,6 +600,72 @@ app.post('/api/chamados/:id/avaliacao', autenticar(['cliente']), (req, res) => {
 });
 
 // ---------------------------------------------------------------
+// Administração (painel restrito, só acessível pela conta fixa de
+// admin — ver ADMIN_EMAIL/ADMIN_SENHA e /api/auth/login-admin acima)
+// ---------------------------------------------------------------
+
+// Números gerais do sistema, para os cards do topo do painel admin.
+app.get('/api/admin/estatisticas', autenticar(['admin']), (req, res) => {
+  const porStatus = {};
+  for (const chamado of db.chamados) {
+    porStatus[chamado.status] = (porStatus[chamado.status] || 0) + 1;
+  }
+  res.json({
+    totalClientes: db.clientes.length,
+    totalPrestadores: db.prestadores.length,
+    totalChamados: db.chamados.length,
+    chamadosPorStatus: porStatus
+  });
+});
+
+// Lista todos os clientes e prestadores cadastrados (sem senhaHash),
+// para a tabela de usuários do painel admin.
+app.get('/api/admin/usuarios', autenticar(['admin']), (req, res) => {
+  res.json({
+    clientes: db.clientes.map((c) => paraPublico('cliente', c)),
+    prestadores: db.prestadores.map((p) => paraPublico('prestador', p))
+  });
+});
+
+// Lista todos os chamados do sistema (qualquer status), com filtro
+// opcional por status via query string — usada na tabela de chamados do
+// painel admin.
+app.get('/api/admin/chamados', autenticar(['admin']), (req, res) => {
+  const { status } = req.query;
+  const lista = db.chamados.filter((c) => !status || c.status === status);
+  res.json(lista.map(montarChamado).sort((a, b) => new Date(b.dataAbertura) - new Date(a.dataAbertura)));
+});
+
+// Cancelamento por moderação: o admin pode encerrar qualquer chamado que
+// ainda esteja em andamento, independente de prazos (diferente do
+// cancelamento pelo próprio cliente, que tem a regra do 1 minuto).
+app.post('/api/admin/chamados/:id/cancelar', autenticar(['admin']), (req, res) => {
+  const chamado = db.chamados.find((c) => c.id === req.params.id);
+  if (!chamado) return res.status(404).json({ erro: 'Chamado não encontrado.' });
+  if (!['aberto', 'aceito', 'em_andamento'].includes(chamado.status)) {
+    return res.status(409).json({ erro: 'Este chamado já está finalizado.' });
+  }
+  chamado.status = 'cancelado';
+  salvar();
+  res.json(montarChamado(chamado));
+});
+
+// Categorias: o admin pode ver e renomear (id continua fixo, 1/2/3).
+app.get('/api/admin/categorias', autenticar(['admin']), (req, res) => {
+  res.json(db.categorias);
+});
+app.patch('/api/admin/categorias/:id', autenticar(['admin']), (req, res) => {
+  const categoria = db.categorias.find((c) => c.id === Number(req.params.id));
+  if (!categoria) return res.status(404).json({ erro: 'Categoria não encontrada.' });
+  if (typeof req.body.nome !== 'string' || !req.body.nome.trim()) {
+    return res.status(400).json({ erro: 'Informe um nome válido.' });
+  }
+  categoria.nome = req.body.nome.trim();
+  salvar();
+  res.json(categoria);
+});
+
+// ---------------------------------------------------------------
 // Funções auxiliares
 //
 // Ficam depois das rotas só por organização — em JavaScript, funções
@@ -460,8 +674,12 @@ app.post('/api/chamados/:id/avaliacao', autenticar(['cliente']), (req, res) => {
 // importa para poder usá-las lá em cima.
 // ---------------------------------------------------------------
 
-// Busca um cliente ou prestador pelo id, dentro da coleção certa.
+// Busca um cliente ou prestador pelo id, dentro da coleção certa. O
+// admin não fica em nenhuma coleção (é uma conta fixa, ver ADMIN_EMAIL
+// acima) — devolvemos um objeto mínimo só para as rotas genéricas
+// (como /api/auth/me) funcionarem sem caso especial.
 function buscarUsuario(tipo, id) {
+  if (tipo === 'admin') return { id: 'admin', nome: 'Administrador' };
   const colecao = tipo === 'cliente' ? db.clientes : db.prestadores;
   return colecao.find((u) => u.id === id);
 }
@@ -498,6 +716,20 @@ function montarResumoChamado(chamado) {
   };
 }
 
+// Nota média (arredondada a 1 casa) e total de avaliações recebidas por
+// um prestador, cruzando avaliacoes -> chamados pelo prestadorId. Usada
+// tanto para mostrar a nota ao cliente (assim que o chamado é aceito)
+// quanto na tela de perfil do próprio prestador.
+function calcularNotaPrestador(prestadorId) {
+  const notas = db.avaliacoes
+    .filter((a) => db.chamados.some((c) => c.id === a.chamadoId && c.prestadorId === prestadorId))
+    .map((a) => a.nota);
+
+  if (notas.length === 0) return { media: null, total: 0 };
+  const media = notas.reduce((soma, n) => soma + n, 0) / notas.length;
+  return { media: Math.round(media * 10) / 10, total: notas.length };
+}
+
 // Versão completa do chamado, com os dados de cliente e (se já tiver
 // sido aceito) do prestador — usada quando o chamado já "pertence" a
 // quem está consultando: o próprio cliente que abriu, ou o prestador
@@ -507,6 +739,7 @@ function montarChamado(chamado) {
   const prestador = chamado.prestadorId ? buscarUsuario('prestador', chamado.prestadorId) : null;
   const categoria = db.categorias.find((c) => c.id === chamado.categoriaId);
   const avaliacao = db.avaliacoes.find((a) => a.chamadoId === chamado.id) || null;
+  const notaPrestador = prestador ? calcularNotaPrestador(prestador.id) : null;
 
   return {
     ...chamado, // todos os campos originais do chamado (id, status, datas, etc.)
@@ -515,6 +748,8 @@ function montarChamado(chamado) {
     clienteTelefone: cliente?.telefone,
     prestadorNome: prestador?.nome || null,
     prestadorTelefone: prestador?.telefone || null,
+    prestadorNotaMedia: notaPrestador?.media ?? null,
+    prestadorTotalAvaliacoes: notaPrestador?.total ?? 0,
     avaliacao
   };
 }

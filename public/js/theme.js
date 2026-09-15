@@ -7,16 +7,18 @@
 // o que o CSS usa para saber qual conjunto de cores aplicar.
 // =================================================================
 (function () {
-  const CHAVE = 'sos-barbie-tema'; // nome usado para guardar a escolha no localStorage
+  const CHAVE = 'sos-car-tema'; // nome usado para guardar a escolha no localStorage
   const botao = document.getElementById('btn-tema');
-  const icone = botao.querySelector('.icone-tema');
+  const iconeLua = botao.querySelector('.icone-lua');
+  const iconeSol = botao.querySelector('.icone-sol');
 
   // Aplica um tema: atualiza o atributo em <html>, troca o ícone do
   // botão (lua = "clique para escurecer", sol = "clique para clarear")
   // e lembra a escolha para a próxima visita.
   function aplicar(tema) {
     document.documentElement.setAttribute('data-tema', tema);
-    icone.textContent = tema === 'escuro' ? '☀️' : '🌙';
+    iconeLua.classList.toggle('oculto', tema === 'escuro');
+    iconeSol.classList.toggle('oculto', tema !== 'escuro');
     localStorage.setItem(CHAVE, tema);
   }
 
