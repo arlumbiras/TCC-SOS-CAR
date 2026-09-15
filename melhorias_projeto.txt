@@ -1,0 +1,273 @@
+MELHORIAS RECOMENDADAS - PROJETO SOS CAR
+=========================================
+
+Este arquivo lista melhorias identificadas durante a varredura do projeto.
+
+
+1. PRIORIDADE ALTA
+------------------
+
+1.1 Remover credenciais sensíveis do código
+- Retirar usuário, senha e endereço do banco do arquivo server/db.js.
+- Utilizar somente variáveis de ambiente.
+- Trocar as credenciais padrão do administrador antes de publicar o sistema.
+- Armazenar a senha do administrador com hash.
+
+1.2 Aguardar a persistência dos dados
+- Usar "await salvar()" nas rotas que alteram dados.
+- Evitar responder sucesso antes da confirmação de gravação no MySQL.
+- Tratar e informar falhas de persistência de forma adequada.
+
+1.3 Substituir a persistência que apaga e recria tudo
+- O método atual DELETE e INSERT de todas as tabelas funciona apenas para um
+  MVP pequeno.
+- Implementar INSERT, UPDATE e DELETE somente no registro alterado.
+- Criar repositórios separados para clientes, prestadores, chamados e avaliações.
+
+1.4 Adicionar limitação de requisições
+- Limitar tentativas de login e cadastro.
+- Limitar solicitações de recuperação de senha.
+- Limitar consultas de geocodificação.
+- Aplicar bloqueio temporário ou espera progressiva após várias tentativas.
+
+1.5 Melhorar validação de e-mail e senha
+- Validar formato do e-mail no backend.
+- Normalizar e-mails para letras minúsculas.
+- Remover espaços extras.
+- Definir tamanho máximo para campos.
+- Exigir política de senha mais forte em produção.
+
+
+2. SEGURANÇA E AUTENTICAÇÃO
+---------------------------
+
+2.1 Melhorar sessões
+- Adicionar data de criação e data de expiração ao token.
+- Remover sessões expiradas periodicamente.
+- Considerar armazenar sessões no banco ou Redis.
+- Invalidar sessões antigas quando a senha for alterada.
+
+2.2 Adicionar cabeçalhos de segurança
+- Content-Security-Policy.
+- X-Content-Type-Options.
+- Referrer-Policy.
+- Strict-Transport-Security quando houver HTTPS.
+- Proteção contra carregamento da aplicação em iframe.
+
+2.3 Usar HTTPS em produção
+- Proteger tokens, senhas, endereços e coordenadas GPS.
+- A geolocalização do navegador deve funcionar em HTTPS ou localhost.
+
+2.4 Proteger dados pessoais
+- Exibir telefone somente quando necessário.
+- Ocultar dados pessoais após o encerramento do chamado.
+- Criar política de retenção e exclusão de dados.
+- Informar claramente o uso da localização ao usuário.
+- Adequar o sistema à LGPD.
+
+2.5 Registrar auditoria administrativa
+- Registrar administrador responsável por cada ação.
+- Registrar data, hora e motivo de cancelamentos.
+- Manter histórico de alterações importantes.
+
+
+3. REGRAS DE NEGÓCIO
+--------------------
+
+3.1 Garantir aceite concorrente no banco
+- Usar UPDATE condicional no MySQL para garantir que apenas um prestador
+  aceite o chamado.
+- Verificar a quantidade de linhas alteradas.
+
+3.2 Centralizar transições de status
+- Criar uma função que valide as transições permitidas.
+- Estados esperados:
+  aberto -> aceito
+  aceito -> em_andamento
+  aceito -> concluido
+  em_andamento -> concluido
+  aberto -> cancelado
+  aceito -> cancelado
+  em_andamento -> cancelado
+
+3.3 Melhorar disponibilidade do prestador
+- Armazenar a data da última localização.
+- Considerar indisponível quem não atualiza a localização por muito tempo.
+- Encerrar a disponibilidade ao sair da conta.
+- Atualizar a posição enquanto o prestador estiver disponível.
+
+3.4 Melhorar distância dos chamados
+- O cálculo atual usa distância em linha reta pela fórmula de Haversine.
+- Para uma versão futura, usar distância real por ruas com OSRM, GraphHopper
+  ou Valhalla.
+
+
+4. OPENSTREETMAP E NOMINATIM
+----------------------------
+
+4.1 Melhorar cache da geocodificação
+- O cache atual é perdido ao reiniciar o servidor.
+- Adicionar expiração das entradas.
+- Limitar o tamanho do cache.
+- Considerar armazenar o cache no MySQL ou Redis.
+
+4.2 Permitir troca do provedor
+- Criar uma camada de abstração para geocodificação.
+- Permitir utilizar Nominatim, uma instância própria ou outro provedor.
+
+4.3 Respeitar a política do Nominatim
+- Manter no máximo aproximadamente uma requisição por segundo.
+- Usar User-Agent identificando a aplicação.
+- Manter a atribuição do OpenStreetMap visível.
+- Não usar o serviço público para autocomplete ou consultas em lote.
+- Não enviar dados pessoais ao serviço.
+
+4.4 Validar coordenadas
+- Rejeitar latitude fora de -90 a 90.
+- Rejeitar longitude fora de -180 a 180.
+- Rejeitar valores NaN, Infinity ou não numéricos.
+
+
+5. FRONTEND
+-----------
+
+5.1 Melhorar tratamento de erros
+- Informar claramente quando houver falha de rede.
+- Diferenciar erro de permissão GPS, serviço indisponível e endereço não
+  encontrado.
+- Adicionar botão de tentar novamente.
+
+5.2 Melhorar o polling
+- Evitar requisições simultâneas sobrepostas.
+- Iniciar nova consulta somente depois da anterior terminar.
+- Usar AbortController.
+- Aplicar backoff quando a API estiver indisponível.
+
+5.3 Atualizar localização continuamente
+- Utilizar navigator.geolocation.watchPosition para prestadores disponíveis.
+- Parar o monitoramento ao sair da conta.
+- Evitar consumo excessivo de bateria e dados.
+
+5.4 Separar o arquivo app.js
+- O arquivo atual concentra muitas responsabilidades.
+- Separar em módulos:
+  auth.js
+  cliente.js
+  prestador.js
+  admin.js
+  chamados.js
+  localizacao.js
+  notificacoes.js
+  avaliacao.js
+
+5.5 Reduzir o uso de innerHTML
+- Preferir textContent, createElement e append para dados externos.
+- Manter a proteção contra XSS em todos os campos exibidos.
+
+5.6 Melhorar acessibilidade
+- Usar aria-live para mensagens e mudanças de status.
+- Gerenciar foco ao trocar de tela.
+- Garantir navegação completa por teclado.
+- Melhorar contraste e textos para leitores de tela.
+
+
+6. BANCO DE DADOS
+-----------------
+
+6.1 Adicionar chaves estrangeiras
+- chamados.cliente_id -> clientes.id
+- chamados.prestador_id -> prestadores.id
+- chamados.categoria_id -> categorias.id
+- avaliacoes.chamado_id -> chamados.id
+
+6.2 Adicionar índices
+- Índices para status, categoria, disponibilidade e datas.
+- Avaliar índices geográficos para buscas por proximidade.
+
+6.3 Usar migrações versionadas
+- Criar uma pasta migrations.
+- Registrar alterações do banco sem apagar dados existentes.
+
+6.4 Usar recursos espaciais em uma versão maior
+- Avaliar colunas POINT.
+- Usar índices espaciais.
+- Filtrar por bounding box antes do cálculo final da distância.
+
+
+7. TESTES E QUALIDADE
+---------------------
+
+7.1 Criar testes automatizados
+- Cadastro e login.
+- Logout e permissões.
+- Abertura de chamado.
+- Aceite concorrente.
+- Cancelamento e conclusão.
+- Avaliação.
+- Redefinição de senha.
+- Geocodificação.
+- Coordenadas inválidas.
+
+7.2 Adicionar lint e formatação
+- Configurar ESLint.
+- Configurar Prettier.
+- Executar validações antes de publicar.
+
+7.3 Criar logs estruturados
+- Registrar data e hora.
+- Registrar rota, método e status HTTP.
+- Registrar duração e identificador da requisição.
+- Não gravar senhas ou tokens nos logs.
+
+7.4 Adicionar monitoramento
+- Criar endpoint /health.
+- Verificar conexão com o MySQL.
+- Monitorar latência e erros.
+- Monitorar falhas do Nominatim.
+
+
+8. MELHORIAS DE PRODUTO
+-----------------------
+
+8.1 Notificações em tempo real
+- Substituir polling por WebSocket ou Server-Sent Events.
+- Enviar atualizações de aceite, chegada, conclusão e cancelamento.
+
+8.2 Chat interno
+- Permitir comunicação entre cliente e prestador sem expor diretamente
+  o telefone.
+
+8.3 Histórico completo
+- Mostrar categoria, prestador, duração, distância, avaliação e motivo de
+  cancelamento.
+
+8.4 Avaliações avançadas
+- Adicionar categorias de avaliação.
+- Moderar comentários.
+- Permitir denúncia de comportamento inadequado.
+- Permitir resposta do prestador.
+
+8.5 Validação de prestadores
+- Validar telefone e CPF.
+- Permitir envio de documentos.
+- Criar aprovação administrativa.
+- Permitir bloqueio e suspensão de prestadores.
+
+
+9. ORDEM RECOMENDADA DE IMPLEMENTAÇÃO
+--------------------------------------
+
+1. Remover credenciais do código.
+2. Aplicar await salvar() nas rotas.
+3. Criar testes automatizados.
+4. Substituir a persistência que apaga e recria todas as tabelas.
+5. Adicionar expiração de sessões.
+6. Adicionar rate limiting.
+7. Fortalecer validações de entrada.
+8. Adicionar chaves estrangeiras e migrações.
+9. Melhorar cache e abstração do Nominatim.
+10. Separar o app.js em módulos.
+11. Adicionar logs, health check e monitoramento.
+12. Evoluir o polling para WebSocket ou Server-Sent Events.
+13. Implementar chat, notificações e validação de prestadores.
+
