@@ -6,11 +6,11 @@ const mysql = require('mysql2/promise');
 // defina as variáveis de ambiente e, principalmente, troque a senha do
 // banco (ela não deveria nunca ter ficado hardcoded/versionada aqui).
 const DB_CONFIG = {
-  host: process.env.DB_HOST || '212.85.3.212',
+  host: process.env.DB_HOST || '127.0.0.1',
   port: Number(process.env.DB_PORT) || 3306,
-  user: process.env.DB_USER || 'u815496249_soscar',
-  password: process.env.DB_PASSWORD || 'Sda481@sud',
-  database: process.env.DB_NAME || 'u815496249_soscar',
+  user: process.env.DB_USER || 'root',
+  password: process.env.DB_PASSWORD || '',
+  database: process.env.DB_NAME || 'sos_car',
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,

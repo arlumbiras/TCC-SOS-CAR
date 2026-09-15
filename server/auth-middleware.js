@@ -23,12 +23,13 @@ const crypto = require('crypto');
 
 // Map funciona como um "dicionário": chave = token, valor = { tipo, id }.
 const sessoes = new Map();
+const DURACAO_SESSAO_MS = 24 * 60 * 60 * 1000;
 
 // Gera um novo token para o usuário (tipo = 'cliente' ou 'prestador',
 // id = identificador único dele) e guarda a sessão em memória.
 function criarSessao(tipo, id) {
   const token = crypto.randomUUID(); // string aleatória única, ex.: "a1b2c3d4-..."
-  sessoes.set(token, { tipo, id });
+  sessoes.set(token, { tipo, id, expiraEm: Date.now() + DURACAO_SESSAO_MS });
   return token;
 }
 
@@ -54,6 +55,10 @@ function autenticar(tiposPermitidos) {
 
     if (!sessao) {
       return res.status(401).json({ erro: 'Não autenticado. Faça login novamente.' });
+    }
+    if (sessao.expiraEm <= Date.now()) {
+      sessoes.delete(token);
+      return res.status(401).json({ erro: 'Sua sessão expirou. Faça login novamente.' });
     }
     if (tiposPermitidos && !tiposPermitidos.includes(sessao.tipo)) {
       return res.status(403).json({ erro: 'Acesso não permitido para este tipo de usuário.' });

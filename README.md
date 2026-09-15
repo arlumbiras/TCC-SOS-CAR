@@ -31,6 +31,7 @@ com credenciais padrão, link de redefinição de senha só no console).
 |---|---|
 | `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` | Conectar a outro banco MySQL |
 | `ADMIN_EMAIL`, `ADMIN_SENHA` | Login da conta única de administrador (padrão: `admin@soscar.com` / `admin123`) |
+| `ADMIN_SENHA_HASH` | Hash bcrypt da senha do administrador; recomendado em produção no lugar de `ADMIN_SENHA` |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | Envio real de e-mail no fluxo "esqueci minha senha" |
 | `APP_URL` | Endereço público usado para montar o link enviado por e-mail |
 | `PORT`, `HOST` | Porta/host onde o servidor escuta |
@@ -49,7 +50,8 @@ com credenciais padrão, link de redefinição de senha só no console).
    primeiro consegue (essa é a regra central do TCC).
 4. Depois de aceitar, o prestador marca "Cheguei ao local" e depois
    "Concluir atendimento". O cliente pode então avaliar o atendimento — a
-   nota passa a aparecer no perfil público do prestador.
+   nota passa a aparecer no perfil público do prestador. O comentário da
+   avaliação pode ter até 500 caracteres.
 5. **Esqueceu a senha?** Na tela de login, clique em "Esqueceu sua senha?".
    Sem `SMTP_*` configurado, o link de redefinição aparece no console do
    servidor em vez de ser enviado por e-mail de verdade (procure por
@@ -76,7 +78,8 @@ para simular o fluxo completo sozinho.
   navegador guarda esse token e o envia em cada requisição. Não usa JWT
   nem grava sessão em disco, mantendo o código simples de explicar — o
   efeito colateral é que todos precisam logar de novo se o servidor for
-  reiniciado. A conta de administrador usa exatamente o mesmo mecanismo.
+  reiniciado. As sessões expiram após 24 horas. A conta de administrador usa
+  exatamente o mesmo mecanismo e compara a senha com bcrypt.
 - **Regra "primeiro que aceita, pega"**: implementada em
   `POST /api/chamados/:id/aceitar` (`server/server.js`). O handler é
   síncrono — não há `await` entre checar se o chamado ainda está livre e

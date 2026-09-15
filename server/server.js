@@ -9,6 +9,7 @@
 // carregar/gravar esses dados no MySQL.
 // =================================================================
 const express = require('express');
+require('dotenv').config();
 const path = require('path');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
@@ -23,6 +24,24 @@ const { geocodificar } = require('./geocodificacao');
 const app = express();
 const PORTA = process.env.PORT || 3000;
 
+const limites = new Map();
+function limitarRequisicoes(janelaMs, maximo) {
+  return (req, res, next) => {
+    const chave = `${req.ip}:${req.path}`;
+    const agora = Date.now();
+    const atual = limites.get(chave);
+    if (!atual || agora - atual.inicio >= janelaMs) {
+      limites.set(chave, { inicio: agora, total: 1 });
+      return next();
+    }
+    if (atual.total >= maximo) {
+      return res.status(429).json({ erro: 'Muitas tentativas. Aguarde e tente novamente.' });
+    }
+    atual.total += 1;
+    next();
+  };
+}
+
 // Conta única de administrador, sem tela pública de cadastro — só existe
 // via estas duas variáveis de ambiente. Os valores abaixo são apenas um
 // fallback para não travar quem sobe o projeto sem configurar nada (igual
@@ -30,7 +49,8 @@ const PORTA = process.env.PORT || 3000;
 // produção definindo ADMIN_EMAIL/ADMIN_SENHA antes de rodar `npm start`.
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@soscar.com';
 const ADMIN_SENHA = process.env.ADMIN_SENHA || 'admin123';
-if (!process.env.ADMIN_EMAIL || !process.env.ADMIN_SENHA) {
+const ADMIN_SENHA_HASH = process.env.ADMIN_SENHA_HASH || bcrypt.hashSync(ADMIN_SENHA, 10);
+if (!process.env.ADMIN_EMAIL || (!process.env.ADMIN_SENHA && !process.env.ADMIN_SENHA_HASH)) {
   console.warn(
     `Usando credenciais padrão de administrador (${ADMIN_EMAIL} / ${ADMIN_SENHA}). Defina ADMIN_EMAIL e ADMIN_SENHA antes de usar em produção.`
   );
@@ -68,6 +88,9 @@ function coordenadasValidas(latitude, longitude) {
 // express.json() lê o corpo das requisições (ex.: os dados de um
 // formulário enviados em JSON) e disponibiliza em req.body.
 app.use(express.json());
+app.get('/health', async (req, res) => {
+  res.json({ status: 'ok' });
+});
 
 // express.static serve os arquivos da pasta "public" diretamente (HTML,
 // CSS, JS do frontend). Como o frontend e a API rodam no mesmo servidor
@@ -85,7 +108,7 @@ app.get('/api/categorias', (req, res) => {
   res.json(db.categorias);
 });
 
-app.get('/api/localizacao/geocodificar', async (req, res) => {
+app.get('/api/localizacao/geocodificar', limitarRequisicoes(60 * 1000, 30), async (req, res) => {
   const endereco = typeof req.query.endereco === 'string' ? req.query.endereco : '';
   if (endereco.trim().length < 5) {
     return res.status(400).json({ erro: 'Informe um endereço válido para localizar.' });
@@ -111,7 +134,7 @@ app.get('/api/localizacao/geocodificar', async (req, res) => {
 // corpo da requisição decide qual). Depois de cadastrar, já efetua o
 // login automaticamente (devolve um token), para o usuário não precisar
 // preencher o formulário de login logo em seguida.
-app.post('/api/auth/registrar', async (req, res) => {
+app.post('/api/auth/registrar', limitarRequisicoes(60 * 1000, 10), async (req, res) => {
   const { tipo, nome, email, senha, telefone, cpf, categoriaId } = req.body;
 
   // --- validações básicas de entrada ---
@@ -136,11 +159,12 @@ app.post('/api/auth/registrar', async (req, res) => {
 
   // "colecao" aponta para o array certo (clientes ou prestadores),
   // evitando duplicar o código de cadastro para os dois casos.
+  const emailNormalizado = email.trim().toLowerCase();
   const colecao = tipo === 'cliente' ? db.clientes : db.prestadores;
 
   // Equivalente às restrições UNIQUE (email, cpf) do banco relacional:
   // aqui quem garante que não existam duplicados é o próprio código.
-  const jaExiste = colecao.some((u) => u.email === email || u.cpf === cpf);
+  const jaExiste = colecao.some((u) => u.email.toLowerCase() === emailNormalizado || u.cpf === cpf.trim());
   if (jaExiste) {
     return res.status(409).json({ erro: 'Já existe um cadastro com este email ou CPF.' });
   }
@@ -154,10 +178,10 @@ app.post('/api/auth/registrar', async (req, res) => {
   const usuario = {
     id: crypto.randomUUID(), // identificador único (equivalente ao SERIAL/IDENTITY do SQL)
     nome,
-    email,
+    email: emailNormalizado,
     senhaHash,
     telefone: telefone || null,
-    cpf,
+    cpf: cpf.trim(),
     dataCadastro: paraDataHoraMysql()
   };
 
@@ -172,7 +196,7 @@ app.post('/api/auth/registrar', async (req, res) => {
   }
 
   colecao.push(usuario); // "INSERT" na tabela em memória
-  salvar(); // persiste a mudança no MySQL (ou mantém só em memória, se o banco estiver indisponível)
+  await salvar();
 
   const token = criarSessao(tipo, usuario.id);
   // "paraPublico" remove a senhaHash antes de devolver o usuário — o
@@ -182,14 +206,16 @@ app.post('/api/auth/registrar', async (req, res) => {
 
 // Login: recebe tipo + email + senha, confere a senha contra o hash
 // salvo e, se bater, devolve um novo token de sessão.
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', limitarRequisicoes(60 * 1000, 10), async (req, res) => {
   const { tipo, email, senha } = req.body;
+  const emailNormalizado = typeof email === 'string' ? email.trim().toLowerCase() : '';
   const colecao = tipo === 'cliente' ? db.clientes : tipo === 'prestador' ? db.prestadores : null;
-  const usuario = colecao && colecao.find((u) => u.email === email);
+  const usuario = colecao && colecao.find((u) => u.email.toLowerCase() === emailNormalizado);
 
   // bcrypt.compare faz o hash da senha digitada com o mesmo algoritmo e
   // compara com o hash salvo — sem nunca reverter o hash original.
-  const senhaValida = usuario && (await bcrypt.compare(senha, usuario.senhaHash));
+  const senhaValida =
+    usuario && typeof senha === 'string' && (await bcrypt.compare(senha, usuario.senhaHash));
 
   if (!senhaValida) {
     // Mensagem genérica de propósito: não dizemos se foi o email ou a
@@ -229,7 +255,7 @@ app.patch('/api/auth/atualizar', autenticar(), async (req, res) => {
     usuario.senhaHash = await bcrypt.hash(senha, 10);
   }
 
-  salvar();
+  await salvar();
   res.json(paraPublico(req.sessao.tipo, usuario));
 });
 
@@ -237,17 +263,18 @@ app.patch('/api/auth/atualizar', autenticar(), async (req, res) => {
 // por e-mail (ver server/email.js). Responde sempre com sucesso
 // genérico, exista ou não o e-mail informado — evita que alguém use esta
 // rota para descobrir quais e-mails estão cadastrados no sistema.
-app.post('/api/auth/esqueci-senha', async (req, res) => {
+app.post('/api/auth/esqueci-senha', limitarRequisicoes(60 * 1000, 3), async (req, res) => {
   const { tipo, email } = req.body;
+  const emailNormalizado = typeof email === 'string' ? email.trim().toLowerCase() : '';
   const colecao = tipo === 'cliente' ? db.clientes : tipo === 'prestador' ? db.prestadores : null;
-  const usuario = colecao && colecao.find((u) => u.email === email);
+  const usuario = colecao && colecao.find((u) => u.email.toLowerCase() === emailNormalizado);
 
   if (usuario) {
     const token = crypto.randomUUID();
     const expiraEm = new Date(Date.now() + 60 * 60 * 1000); // 1 hora
     db.redefinicoesSenha = db.redefinicoesSenha.filter((r) => r.usuarioId !== usuario.id);
     db.redefinicoesSenha.push({ token, tipo, usuarioId: usuario.id, expiraEm: paraDataHoraMysql(expiraEm) });
-    salvar();
+    await salvar();
     await enviarEmailRedefinicao({ paraEmail: usuario.email, nome: usuario.nome, tipo, token });
   }
 
@@ -273,7 +300,7 @@ app.post('/api/auth/redefinir-senha', async (req, res) => {
 
   usuario.senhaHash = await bcrypt.hash(novaSenha, 10);
   db.redefinicoesSenha = db.redefinicoesSenha.filter((r) => r.token !== token);
-  salvar();
+  await salvar();
 
   res.json({ mensagem: 'Senha redefinida com sucesso.' });
 });
@@ -281,9 +308,10 @@ app.post('/api/auth/redefinir-senha', async (req, res) => {
 // Login exclusivo do administrador — não existe cadastro público para
 // este tipo de usuário, só as credenciais fixas definidas por variável
 // de ambiente (ver ADMIN_EMAIL/ADMIN_SENHA acima).
-app.post('/api/auth/login-admin', (req, res) => {
+app.post('/api/auth/login-admin', async (req, res) => {
   const { email, senha } = req.body;
-  if (email !== ADMIN_EMAIL || senha !== ADMIN_SENHA) {
+  const senhaValida = typeof senha === 'string' && (await bcrypt.compare(senha, ADMIN_SENHA_HASH));
+  if (email !== ADMIN_EMAIL || !senhaValida) {
     return res.status(401).json({ erro: 'Email ou senha incorretos.' });
   }
   const token = criarSessao('admin', 'admin');
@@ -299,7 +327,7 @@ app.post('/api/auth/login-admin', (req, res) => {
 // uma nova localização GPS. Só atualiza os campos que vierem preenchidos
 // no corpo da requisição (permite atualizar só a localização, ou só a
 // disponibilidade, sem precisar mandar tudo de novo).
-app.patch('/api/prestador/disponibilidade', autenticar(['prestador']), (req, res) => {
+app.patch('/api/prestador/disponibilidade', autenticar(['prestador']), async (req, res) => {
   const prestador = buscarUsuario('prestador', req.sessao.id);
   const { disponivel, latitude, longitude } = req.body;
 
@@ -312,7 +340,7 @@ app.patch('/api/prestador/disponibilidade', autenticar(['prestador']), (req, res
     prestador.longitude = longitude;
   }
 
-  salvar();
+  await salvar();
   res.json(paraPublico('prestador', prestador));
 });
 
@@ -342,7 +370,7 @@ app.get('/api/prestador/me/avaliacoes', autenticar(['prestador']), (req, res) =>
 
 // Cliente abre um novo chamado de socorro. Nasce sempre com
 // status "aberto" e prestadorId nulo — ninguém foi vinculado ainda.
-app.post('/api/chamados', autenticar(['cliente']), (req, res) => {
+app.post('/api/chamados', autenticar(['cliente']), async (req, res) => {
   const { categoriaId, latitude, longitude, endereco, descricao } = req.body;
 
   if (!db.categorias.some((c) => c.id === Number(categoriaId))) {
@@ -377,7 +405,7 @@ app.post('/api/chamados', autenticar(['cliente']), (req, res) => {
     dataConclusao: null
   };
   db.chamados.push(chamado);
-  salvar();
+  await salvar();
 
   res.status(201).json(montarChamado(chamado));
 });
@@ -421,7 +449,7 @@ app.get('/api/chamados/disponiveis', autenticar(['prestador']), (req, res) => {
 // "aceitar" cheguem quase no mesmo instante, elas são processadas uma
 // de cada vez, nunca ao mesmo tempo — a segunda sempre vai encontrar
 // chamado.prestadorId já preenchido e recebe o erro 409.
-app.post('/api/chamados/:id/aceitar', autenticar(['prestador']), (req, res) => {
+app.post('/api/chamados/:id/aceitar', autenticar(['prestador']), async (req, res) => {
   const chamado = db.chamados.find((c) => c.id === req.params.id);
   if (!chamado) return res.status(404).json({ erro: 'Chamado não encontrado.' });
 
@@ -438,7 +466,7 @@ app.post('/api/chamados/:id/aceitar', autenticar(['prestador']), (req, res) => {
   chamado.prestadorId = prestador.id; // "trava" o chamado para este prestador
   chamado.status = 'aceito';
   chamado.dataAceite = paraDataHoraMysql();
-  salvar();
+  await salvar();
 
   res.json(montarChamado(chamado));
 });
@@ -470,21 +498,21 @@ app.get('/api/chamados/atual', autenticar(), (req, res) => {
 
 // Prestador avisa que chegou ao local e vai começar o atendimento
 // (aceito -> em_andamento).
-app.post('/api/chamados/:id/iniciar', autenticar(['prestador']), (req, res) => {
+app.post('/api/chamados/:id/iniciar', autenticar(['prestador']), async (req, res) => {
   const chamado = pegarChamadoDoPrestador(req);
   if (!chamado) return res.status(404).json({ erro: 'Chamado não encontrado.' });
   if (chamado.status !== 'aceito') {
     return res.status(409).json({ erro: 'Este chamado não está aguardando início de atendimento.' });
   }
   chamado.status = 'em_andamento';
-  salvar();
+  await salvar();
   res.json(montarChamado(chamado));
 });
 
 // Prestador marca o atendimento como concluído (aceito ou em_andamento
 // -> concluido). Permite concluir direto a partir de "aceito" também,
 // caso o prestador esqueça de marcar "cheguei ao local" antes.
-app.post('/api/chamados/:id/concluir', autenticar(['prestador']), (req, res) => {
+app.post('/api/chamados/:id/concluir', autenticar(['prestador']), async (req, res) => {
   const chamado = pegarChamadoDoPrestador(req);
   if (!chamado) return res.status(404).json({ erro: 'Chamado não encontrado.' });
   if (!['aceito', 'em_andamento'].includes(chamado.status)) {
@@ -492,20 +520,20 @@ app.post('/api/chamados/:id/concluir', autenticar(['prestador']), (req, res) => 
   }
   chamado.status = 'concluido';
   chamado.dataConclusao = paraDataHoraMysql();
-  salvar();
+  await salvar();
   res.json(montarChamado(chamado));
 });
 
 // Cliente cancela o próprio chamado — permitido enquanto ninguém aceitou
 // (status "aberto") ou até 1 minuto após o aceite pelo prestador.
-app.post('/api/chamados/:id/cancelar', autenticar(['cliente']), (req, res) => {
+app.post('/api/chamados/:id/cancelar', autenticar(['cliente']), async (req, res) => {
   const chamado = db.chamados.find((c) => c.id === req.params.id && c.clienteId === req.sessao.id);
   if (!chamado) return res.status(404).json({ erro: 'Chamado não encontrado.' });
 
   // Se ainda não foi aceito, pode cancelar normalmente.
   if (chamado.status === 'aberto') {
     chamado.status = 'cancelado';
-    salvar();
+    await salvar();
     return res.json(montarChamado(chamado));
   }
 
@@ -527,7 +555,7 @@ app.post('/api/chamados/:id/cancelar', autenticar(['cliente']), (req, res) => {
     chamado.status = 'cancelado';
     chamado.prestadorId = null;
     chamado.dataAceite = null;
-    salvar();
+    await salvar();
     return res.json(montarChamado(chamado));
   }
 
@@ -535,7 +563,7 @@ app.post('/api/chamados/:id/cancelar', autenticar(['cliente']), (req, res) => {
 });
 
 // Prestador cancela um chamado que havia aceitado (libera para a fila).
-app.post('/api/chamados/:id/cancelar-prestador', autenticar(['prestador']), (req, res) => {
+app.post('/api/chamados/:id/cancelar-prestador', autenticar(['prestador']), async (req, res) => {
   const prestador = buscarUsuario('prestador', req.sessao.id);
   const chamado = db.chamados.find((c) => c.id === req.params.id && c.prestadorId === prestador.id);
   if (!chamado) return res.status(404).json({ erro: 'Chamado não encontrado para este prestador.' });
@@ -546,7 +574,7 @@ app.post('/api/chamados/:id/cancelar-prestador', autenticar(['prestador']), (req
   chamado.prestadorId = null;
   chamado.status = 'aberto';
   chamado.dataAceite = null;
-  salvar();
+  await salvar();
   res.json(montarChamado(chamado));
 });
 
@@ -571,7 +599,7 @@ app.get('/api/chamados/historico', autenticar(), (req, res) => {
 // opcional). A checagem "já foi avaliado?" é o que garante, no código,
 // o mesmo efeito da restrição UNIQUE(id_chamado) do banco relacional:
 // no máximo uma avaliação por chamado.
-app.post('/api/chamados/:id/avaliacao', autenticar(['cliente']), (req, res) => {
+app.post('/api/chamados/:id/avaliacao', autenticar(['cliente']), async (req, res) => {
   const chamado = db.chamados.find((c) => c.id === req.params.id && c.clienteId === req.sessao.id);
   if (!chamado) return res.status(404).json({ erro: 'Chamado não encontrado.' });
   if (chamado.status !== 'concluido') {
@@ -585,16 +613,19 @@ app.post('/api/chamados/:id/avaliacao', autenticar(['cliente']), (req, res) => {
   if (!Number.isInteger(notaNum) || notaNum < 1 || notaNum > 5) {
     return res.status(400).json({ erro: 'A nota deve ser um número inteiro de 1 a 5.' });
   }
+  if (req.body.comentario !== undefined && (typeof req.body.comentario !== 'string' || req.body.comentario.length > 500)) {
+    return res.status(400).json({ erro: 'O comentário deve ter no máximo 500 caracteres.' });
+  }
 
   const avaliacao = {
     id: crypto.randomUUID(),
     chamadoId: chamado.id,
     nota: notaNum,
-    comentario: req.body.comentario || null,
+    comentario: req.body.comentario?.trim() || null,
     dataAvaliacao: paraDataHoraMysql()
   };
   db.avaliacoes.push(avaliacao);
-  salvar();
+  await salvar();
 
   res.status(201).json(avaliacao);
 });
@@ -639,14 +670,14 @@ app.get('/api/admin/chamados', autenticar(['admin']), (req, res) => {
 // Cancelamento por moderação: o admin pode encerrar qualquer chamado que
 // ainda esteja em andamento, independente de prazos (diferente do
 // cancelamento pelo próprio cliente, que tem a regra do 1 minuto).
-app.post('/api/admin/chamados/:id/cancelar', autenticar(['admin']), (req, res) => {
+app.post('/api/admin/chamados/:id/cancelar', autenticar(['admin']), async (req, res) => {
   const chamado = db.chamados.find((c) => c.id === req.params.id);
   if (!chamado) return res.status(404).json({ erro: 'Chamado não encontrado.' });
   if (!['aberto', 'aceito', 'em_andamento'].includes(chamado.status)) {
     return res.status(409).json({ erro: 'Este chamado já está finalizado.' });
   }
   chamado.status = 'cancelado';
-  salvar();
+  await salvar();
   res.json(montarChamado(chamado));
 });
 
@@ -654,14 +685,14 @@ app.post('/api/admin/chamados/:id/cancelar', autenticar(['admin']), (req, res) =
 app.get('/api/admin/categorias', autenticar(['admin']), (req, res) => {
   res.json(db.categorias);
 });
-app.patch('/api/admin/categorias/:id', autenticar(['admin']), (req, res) => {
+app.patch('/api/admin/categorias/:id', autenticar(['admin']), async (req, res) => {
   const categoria = db.categorias.find((c) => c.id === Number(req.params.id));
   if (!categoria) return res.status(404).json({ erro: 'Categoria não encontrada.' });
   if (typeof req.body.nome !== 'string' || !req.body.nome.trim()) {
     return res.status(400).json({ erro: 'Informe um nome válido.' });
   }
   categoria.nome = req.body.nome.trim();
-  salvar();
+  await salvar();
   res.json(categoria);
 });
 

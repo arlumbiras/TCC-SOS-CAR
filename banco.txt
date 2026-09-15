@@ -1,12 +1,15 @@
 rota
-10.67.22.216:3306
+10.67.22.216
+212.85.3.212
 
 nome do banco
 bd_tcc_des_225_soscar
+u815496249_soscar
 
 usuario
 us_des_225_soscar
 soscar
+u815496249_soscar
 
 senha:
 sda481sud
