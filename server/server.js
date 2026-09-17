@@ -14,6 +14,9 @@ const path = require('path');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const os = require('os');
+const fs = require('fs');
+const https = require('https');
+const selfsigned = require('selfsigned');
 
 const { db, salvar, inicializarBanco } = require('./db');
 const { criarSessao, encerrarSessao, autenticar } = require('./auth-middleware');
@@ -786,6 +789,50 @@ function montarChamado(chamado) {
 }
 
 const HOST = process.env.HOST || '0.0.0.0';
+const TLS_CERT_FILE = process.env.TLS_CERT_FILE;
+const TLS_KEY_FILE = process.env.TLS_KEY_FILE;
+
+async function criarServidor() {
+  if (Boolean(TLS_CERT_FILE) !== Boolean(TLS_KEY_FILE)) {
+    throw new Error('Configure TLS_CERT_FILE e TLS_KEY_FILE juntos para ativar HTTPS.');
+  }
+  if (TLS_CERT_FILE && TLS_KEY_FILE) {
+    return https.createServer({
+      cert: fs.readFileSync(TLS_CERT_FILE),
+      key: fs.readFileSync(TLS_KEY_FILE)
+    }, app);
+  }
+
+  const diretorioCertificados = path.resolve(__dirname, '..', '.certs');
+  const arquivoCertificado = path.join(diretorioCertificados, 'localhost-cert.pem');
+  const arquivoChave = path.join(diretorioCertificados, 'localhost-key.pem');
+  if (!fs.existsSync(arquivoCertificado) || !fs.existsSync(arquivoChave)) {
+    fs.mkdirSync(diretorioCertificados, { recursive: true });
+    const ipLocal = obterIpLocal() || '127.0.0.1';
+    const atributos = [{ name: 'commonName', value: 'localhost' }];
+    const extensoes = [
+      { name: 'basicConstraints', cA: false },
+      { name: 'keyUsage', keyEncipherment: true, digitalSignature: true },
+      { name: 'extKeyUsage', serverAuth: true },
+      { name: 'subjectAltName', altNames: [
+        { type: 2, value: 'localhost' },
+        { type: 7, ip: '127.0.0.1' },
+        { type: 7, ip: ipLocal }
+      ] }
+    ];
+    const certificado = await selfsigned.generate(atributos, {
+      keySize: 2048,
+      days: 365,
+      extensions: extensoes
+    });
+    fs.writeFileSync(arquivoCertificado, certificado.cert);
+    fs.writeFileSync(arquivoChave, certificado.private);
+  }
+  return https.createServer({
+    cert: fs.readFileSync(arquivoCertificado),
+    key: fs.readFileSync(arquivoChave)
+  }, app);
+}
 
 function obterIpLocal() {
   const nets = os.networkInterfaces();
@@ -804,15 +851,17 @@ inicializarBanco()
   .catch((erro) => {
     console.warn('Inicialização do banco falhou; iniciando servidor em modo fallback.', erro.message);
   })
-  .finally(() => {
-    app.listen(PORTA, HOST, () => {
+  .finally(async () => {
+    const servidor = await criarServidor();
+    servidor.listen(PORTA, HOST, () => {
       const ipLocal = obterIpLocal();
+      const protocolo = 'https';
       if (ipLocal) {
         console.log(`SOS Car rodando em:
-  - http://localhost:${PORTA}
-  - http://${ipLocal}:${PORTA} (rede local)`);
+  - ${protocolo}://localhost:${PORTA}
+  - ${protocolo}://${ipLocal}:${PORTA} (rede local)`);
       } else {
-        console.log(`SOS Car rodando em http://localhost:${PORTA} (host ${HOST})`);
+        console.log(`SOS Car rodando em ${protocolo}://localhost:${PORTA} (host ${HOST})`);
       }
     });
   });

@@ -1,35 +1,34 @@
 /* =================================================================
-   Estilos do SOS Car — tema "dark premium" roxo/azul.
+   Estilos do SOS Car — identidade preto e amarelo.
 
    Tema claro/escuro: as cores nunca são escritas soltas nas regras
    abaixo, sempre através de variáveis CSS (--nome-da-variavel),
    declaradas uma vez em :root (tema claro, padrão) e redeclaradas em
    :root[data-tema='escuro'] com outros valores. Quem decide qual
    conjunto vale é o atributo "data-tema" da tag <html>, controlado por
-   public/js/theme.js. O gradiente de marca (roxo -> azul) é o mesmo
-   nos dois temas — é a "assinatura visual" fixa da marca, usada com
-   moderação (botão principal, aba ativa, logo, nome da marca).
+   public/js/theme.js.    O amarelo é usado como destaque nos dois temas, com fundos e
+   superfícies adaptados para preservar contraste e legibilidade.
 ================================================================= */
 
 :root {
   color-scheme: light dark; /* avisa o navegador para estilizar coisas nativas (scrollbar, etc.) nos dois temas */
 
-  --marca-50: #f3f0ff;
-  --marca-100: #e9e2ff;
-  --marca-200: #cfc0ff;
-  --marca-400: #a78bfa;
-  --marca-500: #8b5cf6;
-  --marca-600: #7c3aed;
-  --marca-700: #6d28d9;
-  --gradiente-marca: linear-gradient(135deg, #8b5cf6, #3b82f6);
-  --glow-opacidade: 0.12;
+  --marca-50: #fffbea;
+  --marca-100: #fff3b0;
+  --marca-200: #ffe45c;
+  --marca-400: #eab308;
+  --marca-500: #facc15;
+  --marca-600: #ca8a04;
+  --marca-700: #854d0e;
+  --gradiente-marca: linear-gradient(135deg, #facc15, #eab308);
+  --glow-opacidade: 0.16;
 
-  --texto: #17152a;
-  --texto-suave: #675f80;
-  --fundo: #f7f6fb;
+  --texto: #181818;
+  --texto-suave: #625f52;
+  --fundo: #f7f7f5;
   --superficie: #ffffff; /* fundo dos cartões, sempre mais claro que o fundo da página */
-  --borda: #e6e1f5;
-  --sombra: rgba(109, 40, 217, 0.1);
+  --borda: #e5e1d2;
+  --sombra: rgba(24, 24, 24, 0.12);
 
   --perigo: #dc2626;
   --perigo-fundo: #fee2e2;
@@ -42,24 +41,24 @@
   --fonte-titulo: 'Sora', var(--fonte);
 }
 
-/* Tema escuro: mesmas variáveis, valores diferentes — fundo quase preto
-   com um leve matiz roxo, cartões um tom acima, sombras viram "glow". */
+/* Tema escuro: mesmas variáveis, valores diferentes — fundo quase preto,
+   cartões um tom acima e amarelo reservado para ações e destaques. */
 :root[data-tema='escuro'] {
-  --marca-50: #1c1733;
-  --marca-100: #2a2147;
-  --marca-200: #3d2f66;
-  --marca-400: #b39dfb;
-  --marca-500: #a78bfa;
-  --marca-600: #8b5cf6;
-  --marca-700: #c4b5fd;
-  --glow-opacidade: 0.32;
+  --marca-50: #2b2508;
+  --marca-100: #403608;
+  --marca-200: #66570b;
+  --marca-400: #fde047;
+  --marca-500: #facc15;
+  --marca-600: #eab308;
+  --marca-700: #fef08a;
+  --glow-opacidade: 0.24;
 
-  --texto: #f2f0fa;
-  --texto-suave: #9c96b8;
-  --fundo: #0b0a14;
-  --superficie: #14121f;
-  --borda: #262238;
-  --sombra: rgba(139, 92, 246, 0.2);
+  --texto: #f8f7f0;
+  --texto-suave: #b8b39f;
+  --fundo: #0b0b0a;
+  --superficie: #171715;
+  --borda: #343228;
+  --sombra: rgba(0, 0, 0, 0.36);
 
   --perigo: #f87171;
   --perigo-fundo: #3a1d2b;
@@ -219,24 +218,27 @@ button:focus-visible {
   pointer-events: none;
 }
 #tela-auth::before {
-  background: #8b5cf6;
+  background: #facc15;
   top: -200px;
   left: -180px;
 }
 #tela-auth::after {
-  background: #3b82f6;
+  background: #6b7280;
   bottom: -220px;
   right: -180px;
 }
 .conteudo-auth {
   position: relative;
   z-index: 1;
-  padding-top: 40px;
+  max-width: 1120px;
+  padding-top: 56px;
+  padding-bottom: 72px;
 }
 .auth-layout {
-  display: flex;
-  flex-direction: column;
-  gap: 36px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(380px, 460px);
+  align-items: center;
+  gap: clamp(36px, 8vw, 120px);
 }
 .auth-logo {
   width: 52px;
@@ -312,8 +314,8 @@ button:focus-visible {
 /* Classe alternada via JS (app.js) para marcar qual opção está ativa. */
 .segmentado-opcao.ativo {
   background: var(--gradiente-marca);
-  color: #fff;
-  box-shadow: 0 4px 14px rgba(124, 58, 237, 0.35);
+  color: #181818;
+  box-shadow: 0 4px 14px rgba(202, 138, 4, 0.3);
 }
 
 /* ---------- Formulários ---------- */
@@ -380,12 +382,12 @@ button:focus-visible {
 }
 .botao-primario {
   background: var(--gradiente-marca);
-  color: #fff;
-  box-shadow: 0 8px 20px rgba(124, 58, 237, 0.3);
+  color: #181818;
+  box-shadow: 0 8px 20px rgba(202, 138, 4, 0.28);
 }
 .botao-primario:hover {
   filter: brightness(1.08);
-  box-shadow: 0 10px 26px rgba(124, 58, 237, 0.4);
+  box-shadow: 0 10px 26px rgba(202, 138, 4, 0.38);
 }
 .botao-primario:disabled,
 .botao-secundario:disabled,
@@ -605,6 +607,13 @@ button:focus-visible {
   font-size: 13.5px;
   transition: border-color 0.15s ease;
 }
+.item-historico > div {
+  min-width: 0;
+}
+.avaliacao-comentario {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
 .item-chamado:hover {
   border-color: var(--marca-400);
 }
@@ -737,13 +746,51 @@ button:focus-visible {
 /* Em telas estreitas (celular), os itens de lista empilham em vez de
    ficar lado a lado, para não espremer o botão "Aceitar". */
 @media (max-width: 480px) {
+  .topo {
+    padding: 10px 14px;
+  }
+  .marca {
+    font-size: 17px;
+  }
+  .marca-icone {
+    width: 30px;
+    height: 30px;
+  }
+  .topo-acoes {
+    gap: 6px;
+  }
+  .topo-acoes .botao-secundario {
+    padding: 8px 10px;
+    font-size: 12px;
+  }
   .conteudo {
     padding: 20px 14px 48px;
+  }
+  .conteudo-auth {
+    padding-top: 28px;
+    padding-bottom: 48px;
+  }
+  .auth-layout {
+    grid-template-columns: 1fr;
+    gap: 26px;
+  }
+  .auth-intro h1 {
+    font-size: 24px;
+  }
+  .cartao {
+    padding: 18px;
   }
   .item-chamado,
   .item-historico {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  @media (min-width: 481px) and (max-width: 900px) {
+    .auth-layout {
+      grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
+      gap: 28px;
+    }
   }
   .toast-container {
     left: 12px;

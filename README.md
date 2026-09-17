@@ -18,7 +18,31 @@ Por padrão a API se conecta a um banco MySQL remoto já configurado em
 servidor sobe mesmo assim, guardando os dados apenas em memória (modo
 fallback) — ou seja, eles se perdem ao reiniciar.
 
-Depois abra `http://localhost:3000` no navegador.
+Depois abra `https://localhost:3000` no navegador. O servidor gera
+automaticamente um certificado local de desenvolvimento na primeira execução.
+
+### Localização no Google Chrome
+
+O Chrome só permite `navigator.geolocation` em um contexto seguro. O endereço
+`http://localhost` é uma exceção para desenvolvimento, mas o endereço de rede
+local (por exemplo, `http://192.168.x.x:3000`) precisa de `https://`.
+
+Para produção, substitua o certificado local por um certificado válido. Para
+testar em uma rede local, gere um certificado confiável para o computador e o
+celular (por exemplo, com `mkcert`) e configure no `.env`:
+
+```
+TLS_CERT_FILE=C:\caminho\para\cert.pem
+TLS_KEY_FILE=C:\caminho\para\key.pem
+```
+
+As duas variáveis devem ser informadas juntas. Se elas não forem informadas,
+o certificado de desenvolvimento será usado automaticamente. Depois reinicie o servidor e
+abra o endereço `https://IP-DA-MAQUINA:3000`. No Chrome, permita a localização
+para esse endereço. No primeiro acesso, o certificado automático pode exibir
+um aviso de segurança; no celular, instale/confie no certificado para remover
+o aviso. Não é possível liberar a localização via JavaScript nem remover esse
+aviso sem confiar no certificado no dispositivo.
 
 ### Variáveis de ambiente (opcionais)
 
@@ -33,8 +57,9 @@ com credenciais padrão, link de redefinição de senha só no console).
 | `ADMIN_EMAIL`, `ADMIN_SENHA` | Login da conta única de administrador (padrão: `admin@soscar.com` / `admin123`) |
 | `ADMIN_SENHA_HASH` | Hash bcrypt da senha do administrador; recomendado em produção no lugar de `ADMIN_SENHA` |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | Envio real de e-mail no fluxo "esqueci minha senha" |
-| `APP_URL` | Endereço público usado para montar o link enviado por e-mail |
+| `APP_URL` | Endereço público usado para montar o link enviado por e-mail (padrão: `https://localhost:3000`) |
 | `PORT`, `HOST` | Porta/host onde o servidor escuta |
+| `TLS_CERT_FILE`, `TLS_KEY_FILE` | Caminhos do certificado e da chave privada para ativar HTTPS local |
 
 ## Como usar
 

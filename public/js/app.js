@@ -515,6 +515,11 @@
       localizacaoStatus.textContent = 'Geolocalização não é suportada neste navegador.';
       return;
     }
+    if (!window.isSecureContext) {
+      localizacaoStatus.textContent =
+        'O Chrome bloqueia a localização nesta rede sem HTTPS. Abra em localhost ou configure HTTPS no servidor.';
+      return;
+    }
     localizacaoStatus.textContent = 'Obtendo localização...';
     navigator.geolocation.getCurrentPosition(
       (pos) => {
@@ -733,6 +738,11 @@
   // distância usado para filtrar/ordenar os chamados disponíveis.
   function obterLocalizacaoPrestador() {
     if (!navigator.geolocation) return;
+    if (!window.isSecureContext) {
+      prestadorLocalizacaoStatus.textContent =
+        'O Chrome bloqueia a localização nesta rede sem HTTPS. Abra em localhost ou configure HTTPS no servidor.';
+      return;
+    }
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
         localizacaoPrestador = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
@@ -845,7 +855,7 @@
       <li class="item-historico">
         <div>
           <strong>${'★'.repeat(a.nota)}${'☆'.repeat(5 - a.nota)}</strong>
-          <div class="texto-auxiliar">${escaparHtml(a.comentario) || 'Sem comentário'} · ${escaparHtml(a.clienteNome)} · ${formatarData(a.data)}</div>
+          <div class="texto-auxiliar avaliacao-comentario">${escaparHtml(a.comentario) || 'Sem comentário'} · ${escaparHtml(a.clienteNome)} · ${formatarData(a.data)}</div>
         </div>
       </li>`
       )

@@ -35,7 +35,7 @@ function obterTransportador() {
 // responder com sucesso genérico, mesmo se o e-mail falhar (ver
 // server/server.js).
 async function enviarEmailRedefinicao({ paraEmail, nome, tipo, token }) {
-  const baseUrl = process.env.APP_URL || 'http://localhost:3000';
+  const baseUrl = process.env.APP_URL || 'https://localhost:3000';
   const link = `${baseUrl}/?tipo=${encodeURIComponent(tipo)}&token=${encodeURIComponent(token)}`;
 
   if (!smtpConfigurado()) {
