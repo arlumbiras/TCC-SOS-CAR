@@ -104,7 +104,7 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
 // Categorias (equivalente à tabela categoria_servico do banco relacional)
 // ---------------------------------------------------------------
 
-// Lista as 3 categorias fixas do sistema. Usada pelo frontend para
+// Lista as categorias fixas do sistema. Usada pelo frontend para
 // montar os <select> de categoria no cadastro de prestador e na
 // abertura de chamado.
 app.get('/api/categorias', (req, res) => {
@@ -345,6 +345,26 @@ app.patch('/api/prestador/disponibilidade', autenticar(['prestador']), async (re
 
   await salvar();
   res.json(paraPublico('prestador', prestador));
+});
+
+// Cliente atualiza a própria posição durante um chamado ativo. O prestador
+// vinculado recebe essas coordenadas pela rota /chamados/atual.
+app.patch('/api/chamados/:id/localizacao', autenticar(['cliente']), async (req, res) => {
+  const chamado = db.chamados.find((c) => c.id === req.params.id && c.clienteId === req.sessao.id);
+  if (!chamado) return res.status(404).json({ erro: 'Chamado não encontrado.' });
+  if (!['aberto', 'aceito', 'em_andamento'].includes(chamado.status)) {
+    return res.status(409).json({ erro: 'Este chamado não está ativo.' });
+  }
+
+  const { latitude, longitude } = req.body;
+  if (!coordenadasValidas(latitude, longitude)) {
+    return res.status(400).json({ erro: 'Informe latitude e longitude válidas.' });
+  }
+
+  chamado.latitude = latitude;
+  chamado.longitude = longitude;
+  await salvar();
+  res.json(montarChamado(chamado));
 });
 
 // Perfil de avaliações do próprio prestador: nota média, total de
@@ -684,7 +704,7 @@ app.post('/api/admin/chamados/:id/cancelar', autenticar(['admin']), async (req, 
   res.json(montarChamado(chamado));
 });
 
-// Categorias: o admin pode ver e renomear (id continua fixo, 1/2/3).
+// Categorias: o admin pode ver e renomear (id continua fixo, 1/2/3/4).
 app.get('/api/admin/categorias', autenticar(['admin']), (req, res) => {
   res.json(db.categorias);
 });
@@ -782,6 +802,8 @@ function montarChamado(chamado) {
     clienteTelefone: cliente?.telefone,
     prestadorNome: prestador?.nome || null,
     prestadorTelefone: prestador?.telefone || null,
+    prestadorLatitude: prestador?.latitude ?? null,
+    prestadorLongitude: prestador?.longitude ?? null,
     prestadorNotaMedia: notaPrestador?.media ?? null,
     prestadorTotalAvaliacoes: notaPrestador?.total ?? 0,
     avaliacao

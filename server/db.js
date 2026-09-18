@@ -51,7 +51,8 @@ function aplicarEstadoPadrao() {
   db.categorias = [
     { id: 1, nome: 'Mecânico' },
     { id: 2, nome: 'Borracheiro' },
-    { id: 3, nome: 'Auto Elétrica' }
+    { id: 3, nome: 'Auto Elétrica' },
+    { id: 4, nome: 'Guincho' }
   ];
   db.clientes = [];
   db.prestadores = [];
@@ -150,14 +151,14 @@ async function garantirEstrutura() {
     await conn.query(consulta);
   }
 
-  // Sempre reafirma o nome oficial das 3 categorias (id fixo), mesmo que
+  // Sempre reafirma o nome oficial das categorias (id fixo), mesmo que
   // elas já existam — corrige automaticamente qualquer nome gravado antes
   // sem acento/capitalização errada (ex.: "Mecanico", "auto eletrica"),
   // sem duplicar linhas nem afetar chamados/prestadores já vinculados ao
   // mesmo id.
   await conn.query(
-    'INSERT INTO categorias (id, nome) VALUES (1, ?), (2, ?), (3, ?) ON DUPLICATE KEY UPDATE nome = VALUES(nome)',
-    ['Mecânico', 'Borracheiro', 'Auto Elétrica']
+    'INSERT INTO categorias (id, nome) VALUES (1, ?), (2, ?), (3, ?), (4, ?) ON DUPLICATE KEY UPDATE nome = VALUES(nome)',
+    ['Mecânico', 'Borracheiro', 'Auto Elétrica', 'Guincho']
   );
 }
 

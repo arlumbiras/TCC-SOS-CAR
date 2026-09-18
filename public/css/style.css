@@ -40,6 +40,12 @@
   --fonte: 'Inter', 'Segoe UI', system-ui, -apple-system, Roboto, Arial, sans-serif;
   --fonte-titulo: 'Sora', var(--fonte);
 }
+.tela-carregamento img {
+  width: min(82vw, 280px);
+  height: 140px;
+  object-fit: cover;
+  object-position: center;
+}
 
 /* Tema escuro: mesmas variáveis, valores diferentes — fundo quase preto,
    cartões um tom acima e amarelo reservado para ações e destaques. */
@@ -117,8 +123,10 @@ h1, h2, h3 {
 .marca-icone {
   display: block;
   flex: none;
-  width: 34px;
-  height: 34px;
+  width: 118px;
+  height: 70px;
+  object-fit: contain;
+  object-position: center;
 }
 .marca-nome strong {
   background: var(--gradiente-marca);
@@ -241,10 +249,13 @@ button:focus-visible {
   gap: clamp(36px, 8vw, 120px);
 }
 .auth-logo {
-  width: 52px;
-  height: 52px;
-  margin-bottom: 18px;
-  filter: drop-shadow(0 10px 24px rgba(124, 58, 237, 0.35));
+  display: block;
+  width: min(100%, 520px);
+  height: 240px;
+  object-fit: cover;
+  object-position: center;
+  margin-bottom: 22px;
+  filter: drop-shadow(0 10px 24px rgba(234, 179, 8, 0.35));
 }
 .auth-intro h1 {
   margin: 0 0 10px;
@@ -753,8 +764,8 @@ button:focus-visible {
     font-size: 17px;
   }
   .marca-icone {
-    width: 30px;
-    height: 30px;
+    width: 96px;
+    height: 58px;
   }
   .topo-acoes {
     gap: 6px;
@@ -776,6 +787,11 @@ button:focus-visible {
   }
   .auth-intro h1 {
     font-size: 24px;
+  }
+  .auth-logo {
+    width: min(100%, 430px);
+    height: 190px;
+    margin-bottom: 16px;
   }
   .cartao {
     padding: 18px;
@@ -866,6 +882,7 @@ button:focus-visible {
 
 /* ---------- Mapa (Leaflet + OpenStreetMap) ---------- */
 .mapa-caixa {
+  position: relative;
   height: 220px;
   border-radius: 12px;
   overflow: hidden;
@@ -873,11 +890,58 @@ button:focus-visible {
   margin-bottom: 16px;
   background: var(--fundo);
 }
+.mapa-caixa.mapa-fullscreen {
+  position: fixed;
+  inset: 78px 18px 18px 18px;
+  height: auto;
+  z-index: 1000;
+  border-radius: 18px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.28);
+}
+.mapa-caixa.mapa-fullscreen .leaflet-container {
+  height: 100% !important;
+}
+.mapa-botao-fullscreen {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 500;
+  border: 1px solid rgba(15, 23, 42, 0.18);
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--texto);
+  padding: 7px 10px;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.12);
+}
 .leaflet-popup-content-wrapper,
 .leaflet-popup-tip {
   background: var(--superficie);
   color: var(--texto);
 }
+
+.mapa-icone {
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.22);
+  font-size: 18px;
+  line-height: 1;
+  background: #fff;
+}
+
+.icon-mecanico { background: #fef3c7; }
+.icon-borracheiro { background: #dbeafe; }
+.icon-auto-eletrica { background: #ede9fe; }
+.icon-guincho { background: #dcfce7; }
+.icon-cliente { background: #fee2e2; }
 
 /* ---------- Painel administrativo ---------- */
 .stat-grid {

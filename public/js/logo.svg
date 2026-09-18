@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="SOS Car">
+  <defs>
+    <linearGradient id="marcaGradiente" x1="12" y1="4" x2="88" y2="96" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#facc15"/>
+      <stop offset="1" stop-color="#eab308"/>
+    </linearGradient>
+  </defs>
+  <path d="M50 4 L85 16 V45 C85 69 69 87 50 96 C31 87 15 69 15 45 V16 Z" fill="url(#marcaGradiente)"/>
+  <g transform="translate(50,46) scale(2.3) translate(-12,-12)">
+    <path d="M4 13l1.4-4.5A2 2 0 0 1 7.3 7h9.4a2 2 0 0 1 1.9 1.5L20 13v4a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-1H7v1a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-4z" fill="#ffffff"/>
+    <circle cx="7.5" cy="17" r="1.5" fill="#181818"/>
+    <circle cx="16.5" cy="17" r="1.5" fill="#181818"/>
+  </g>
+</svg>

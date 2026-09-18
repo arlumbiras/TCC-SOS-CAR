@@ -72,6 +72,8 @@ const API = (function () {
 
     abrirChamado: (dados) => requisitar('/chamados', { method: 'POST', body: JSON.stringify(dados) }),
     chamadoAtual: () => requisitar('/chamados/atual'),
+    atualizarLocalizacaoChamado: (id, dados) =>
+      requisitar(`/chamados/${id}/localizacao`, { method: 'PATCH', body: JSON.stringify(dados) }),
     cancelarChamado: (id) => requisitar(`/chamados/${id}/cancelar`, { method: 'POST' }),
     avaliarChamado: (id, dados) =>
       requisitar(`/chamados/${id}/avaliacao`, { method: 'POST', body: JSON.stringify(dados) }),

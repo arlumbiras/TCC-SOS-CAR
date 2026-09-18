@@ -17,9 +17,9 @@
   <meta name="theme-color" content="#181818" />
   <meta name="description" content="SOS Car — peça socorro automotivo perto de você ou atenda quem precisa, com acompanhamento do chamado em tempo real." />
   <title>SOS Car — Socorro automotivo</title>
-  <link rel="icon" type="image/svg+xml" href="img/logo.svg" />
+  <link rel="icon" type="image/svg+xml" href="img/logo.png" />
   <link rel="manifest" href="manifest.json" />
-  <link rel="apple-touch-icon" href="img/logo.svg" />
+  <link rel="apple-touch-icon" href="img/logo.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet" />
@@ -32,7 +32,7 @@
        nascem com "oculta"). app.js troca para a tela certa assim que
        terminar de verificar sessão salva + carregar categorias. -->
   <div id="tela-carregamento" class="tela-carregamento">
-    <img src="img/logo.svg" alt="SOS Car" width="48" height="48" />
+    <img src="img/logo.png" alt="SOS Car" width="280" height="140" />
     <span class="spinner" aria-hidden="true"></span>
     <p class="texto-auxiliar">Carregando…</p>
   </div>
@@ -40,7 +40,7 @@
   <!-- Barra fixa no topo: aparece em qualquer tela (login ou logado). -->
   <header class="topo">
     <div class="marca">
-      <img src="img/logo.svg" alt="SOS Car" class="marca-icone" width="34" height="34" />
+      <img src="img/logo.png" alt="SOS Car" class="marca-icone" width="118" height="70" />
       <span class="marca-nome">SOS <strong>Car</strong></span>
     </div>
     <div class="topo-acoes">
@@ -62,7 +62,7 @@
     <div class="conteudo conteudo-auth">
       <div class="auth-layout">
         <div class="auth-intro">
-          <img src="img/logo.svg" alt="" aria-hidden="true" class="auth-logo" width="56" height="56" />
+          <img src="img/logo.png" alt="" aria-hidden="true" class="auth-logo" width="520" height="240" />
           <h1>Precisa de socorro no veículo?</h1>
           <p class="subtitulo">Peça ajuda ou atenda quem precisa — rápido, simples e com acompanhamento em tempo real.</p>
           <ul class="auth-destaques">
@@ -387,8 +387,8 @@
             <select id="admin-filtro-status" class="admin-filtro">
               <option value="">Todos os status</option>
               <option value="aberto">Aberto</option>
-              <option value="aceito">Aceito</option>
-              <option value="em_andamento">A caminho</option>
+              <option value="aceito">Aceito, a caminho </option>
+              <option value="em_andamento">Chegou</option>
               <option value="concluido">Concluído</option>
               <option value="cancelado">Cancelado</option>
             </select>

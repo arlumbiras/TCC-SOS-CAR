@@ -69,6 +69,14 @@
   function pararAtualizacaoAutomatica() {
     if (intervaloAtualizacao) clearInterval(intervaloAtualizacao);
     intervaloAtualizacao = null;
+    if (watchIdCliente !== null && navigator.geolocation) {
+      navigator.geolocation.clearWatch(watchIdCliente);
+      watchIdCliente = null;
+    }
+    if (watchIdPrestador !== null && navigator.geolocation) {
+      navigator.geolocation.clearWatch(watchIdPrestador);
+      watchIdPrestador = null;
+    }
   }
 
   // Traduz o status técnico (igual ao salvo no banco) para um texto
@@ -492,6 +500,7 @@
   const LOCALIZACAO_RESERVA = { latitude: -23.55052, longitude: -46.633308 };
 
   let localizacaoCliente = null; // coordenadas obtidas pelo botão "Usar minha localização"
+  let watchIdCliente = null;
   let notaSelecionada = 0; // nota (1-5) escolhida no componente de estrelas
 
   // Chamada uma vez, logo após o login/cadastro como cliente.
@@ -499,12 +508,36 @@
     clienteNomeEl.textContent = usuario.nome;
     mostrarTela('cliente');
     montarEstrelas();
-    atualizarPainelCliente();
     pararAtualizacaoAutomatica();
-    // A cada 6 segundos, busca de novo o chamado atual e o histórico —
+    iniciarRastreamentoCliente();
+    atualizarPainelCliente();
+    // A cada 3 segundos, busca de novo o chamado atual e o histórico —
     // é assim que a tela do cliente "percebe" quando um prestador aceita
     // o chamado, sem precisar de WebSockets.
-    intervaloAtualizacao = setInterval(atualizarPainelCliente, 6000);
+    intervaloAtualizacao = setInterval(atualizarPainelCliente, 3000);
+  }
+
+  // Mantém a posição do cliente atualizada para que o prestador veja seu
+  // deslocamento no próprio mapa enquanto o chamado estiver ativo.
+  function iniciarRastreamentoCliente() {
+    if (!navigator.geolocation || !window.isSecureContext) return;
+    if (watchIdCliente !== null) navigator.geolocation.clearWatch(watchIdCliente);
+    watchIdCliente = navigator.geolocation.watchPosition(
+      async (pos) => {
+        const chamado = chamadoEmFoco;
+        if (!chamado || !['aberto', 'aceito', 'em_andamento'].includes(chamado.status)) return;
+        try {
+          await API.atualizarLocalizacaoChamado(chamado.id, {
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude
+          });
+        } catch {
+          // A próxima posição tenta sincronizar novamente.
+        }
+      },
+      () => {},
+      { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 }
+    );
   }
 
   // Botão "Usar minha localização": pede ao navegador as coordenadas
@@ -679,7 +712,34 @@
       ${chamado.prestadorNome ? `<dt>Prestador</dt><dd>${escaparHtml(chamado.prestadorNome)} · ${escaparHtml(chamado.prestadorTelefone) || 'sem telefone'}${notaPrestadorHtml}</dd>` : ''}
       <dt>Status</dt><dd>${rotuloStatus(chamado.status)}</dd>
     `;
-    Mapa.criarOuAtualizar('mapa-cliente', chamado.latitude, chamado.longitude, 'Local do chamado');
+    Mapa.criarOuAtualizar('mapa-cliente', chamado.latitude, chamado.longitude, 'Local do chamado', 'padrao');
+    const prestadorAceito = ['aceito', 'em_andamento'].includes(chamado.status) && !!chamado.prestadorId;
+    const prestadorTemLocalizacao =
+      typeof chamado.prestadorLatitude === 'number' && typeof chamado.prestadorLongitude === 'number';
+
+    if (prestadorAceito) {
+      const categoriaPrestador = chamado.categoriaNome || 'Mecânico';
+      const latitudePrestador = prestadorTemLocalizacao ? chamado.prestadorLatitude : chamado.latitude;
+      const longitudePrestador = prestadorTemLocalizacao ? chamado.prestadorLongitude : chamado.longitude;
+
+      Mapa.criarOuAtualizarPrestador(
+        'mapa-cliente',
+        latitudePrestador,
+        longitudePrestador,
+        `Prestador: ${escaparHtml(chamado.prestadorNome)}`,
+        categoriaPrestador
+      );
+
+      if (prestadorTemLocalizacao) {
+        Mapa.criarOuAtualizarRota(
+          'mapa-cliente',
+          [chamado.latitude, chamado.longitude],
+          [chamado.prestadorLatitude, chamado.prestadorLongitude]
+        );
+      }
+    } else {
+      Mapa.removerPrestador('mapa-cliente');
+    }
 
     // Cliente pode cancelar enquanto ninguém aceitou, ou dentro de 1
     // minuto após o aceite. Depois disso, o botão some.
@@ -715,6 +775,7 @@
   const prestadorListaAvaliacoesEl = document.getElementById('prestador-lista-avaliacoes');
 
   let localizacaoPrestador = null;
+  let watchIdPrestador = null;
 
   // Chamada uma vez, logo após o login/cadastro como prestador.
   function iniciarPainelPrestador(usuario) {
@@ -724,9 +785,9 @@
     disponivelTexto.textContent = usuario.disponivel ? 'Disponível' : 'Indisponível';
 
     mostrarTela('prestador');
+    pararAtualizacaoAutomatica();
     obterLocalizacaoPrestador();
     atualizarPainelPrestador();
-    pararAtualizacaoAutomatica();
     // Mesma ideia do painel do cliente: sem WebSockets, a lista de
     // chamados disponíveis (ou o andamento do chamado aceito) é
     // atualizada perguntando de novo à API a cada 6 segundos.
@@ -743,21 +804,22 @@
         'O Chrome bloqueia a localização nesta rede sem HTTPS. Abra em localhost ou configure HTTPS no servidor.';
       return;
     }
-    navigator.geolocation.getCurrentPosition(
+    if (watchIdPrestador !== null) navigator.geolocation.clearWatch(watchIdPrestador);
+    watchIdPrestador = navigator.geolocation.watchPosition(
       async (pos) => {
         localizacaoPrestador = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
         prestadorLocalizacaoStatus.textContent = 'Localização atualizada.';
         try {
           await API.atualizarDisponibilidade({ ...localizacaoPrestador });
         } catch {
-          // Falha silenciosa: a disponibilidade ainda pode ser alternada
-          // manualmente pelo interruptor, só a busca por distância fica sem esse dado.
+          // Falha silenciosa: a próxima posição tenta sincronizar novamente.
         }
       },
       () => {
         prestadorLocalizacaoStatus.textContent =
-          'Não foi possível obter sua localização; a busca por chamados próximos ficará sem filtro de distância.';
-      }
+          'Não foi possível obter sua localização; o cliente não verá seu deslocamento.';
+      },
+      { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 }
     );
   }
 
@@ -892,7 +954,26 @@
       <dt>Descrição</dt><dd>${escaparHtml(chamado.descricao) || '—'}</dd>
       <dt>Status</dt><dd>${rotuloStatus(chamado.status)}</dd>
     `;
-    Mapa.criarOuAtualizar('mapa-prestador', chamado.latitude, chamado.longitude, escaparHtml(chamado.clienteNome));
+    Mapa.criarOuAtualizar('mapa-prestador', chamado.latitude, chamado.longitude, escaparHtml(chamado.clienteNome), chamado.categoriaNome || 'Mecânico');
+    if (
+      typeof localizacaoPrestador?.latitude === 'number' &&
+      typeof localizacaoPrestador?.longitude === 'number'
+    ) {
+      Mapa.criarOuAtualizarPrestador(
+        'mapa-prestador',
+        localizacaoPrestador.latitude,
+        localizacaoPrestador.longitude,
+        'Sua localização',
+        chamado.categoriaNome || 'Mecânico'
+      );
+      Mapa.criarOuAtualizarRota(
+        'mapa-prestador',
+        [chamado.latitude, chamado.longitude],
+        [localizacaoPrestador.latitude, localizacaoPrestador.longitude]
+      );
+    } else {
+      Mapa.removerPrestador('mapa-prestador');
+    }
     btnIniciar.classList.toggle('oculto', chamado.status !== 'aceito');
     btnConcluir.classList.toggle('oculto', chamado.status === 'aberto');
     btnCancelarPrestador.classList.toggle('oculto', chamado.status !== 'aceito');

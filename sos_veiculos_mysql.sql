@@ -168,4 +168,5 @@ CREATE INDEX idx_prestador_categoria_disponivel ON prestador(id_categoria, dispo
 INSERT INTO categoria_servico (nome) VALUES
     ('Mecânico'),
     ('Borracheiro'),
-    ('Auto Elétrica');
+    ('Auto Elétrica'),
+    ('Guincho');
