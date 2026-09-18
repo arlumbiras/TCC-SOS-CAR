@@ -9,8 +9,10 @@
 // carregar/gravar esses dados no MySQL.
 // =================================================================
 const express = require('express');
-require('dotenv').config();
 const path = require('path');
+// O caminho é explícito para o .env ser encontrado mesmo que o servidor seja
+// iniciado de outra pasta (o padrão do dotenv é a pasta atual do terminal).
+require('dotenv').config({ path: path.join(__dirname, '..', '.env'), quiet: true });
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const os = require('os');
@@ -18,14 +20,24 @@ const fs = require('fs');
 const https = require('https');
 const selfsigned = require('selfsigned');
 
-const { db, salvar, inicializarBanco } = require('./db');
-const { criarSessao, encerrarSessao, autenticar } = require('./auth-middleware');
+const { db, salvar, inicializarBanco, estadoPersistencia } = require('./db');
+const { criarSessao, encerrarSessao, encerrarSessoesDoUsuario, autenticar } = require('./auth-middleware');
 const { distanciaKm } = require('./utils/distancia');
 const { enviarEmailRedefinicao } = require('./email');
 const { geocodificar } = require('./geocodificacao');
 
 const app = express();
 const PORTA = process.env.PORT || 3000;
+
+// O Express 4 não captura erros de handlers "async": uma Promise rejeitada
+// vira "unhandled rejection", que derruba o processo do Node (ou deixa a
+// requisição pendurada). Este wrapper repassa o erro para o middleware de
+// erro registrado no fim do arquivo, que responde 500 em JSON.
+const assincrono = (handler) => (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
+
+// Chamados que ainda não terminaram (ciclo de vida: aberto -> aceito ->
+// em_andamento -> concluido/cancelado).
+const STATUS_ATIVOS = ['aberto', 'aceito', 'em_andamento'];
 
 const limites = new Map();
 function limitarRequisicoes(janelaMs, maximo) {
@@ -34,7 +46,7 @@ function limitarRequisicoes(janelaMs, maximo) {
     const agora = Date.now();
     const atual = limites.get(chave);
     if (!atual || agora - atual.inicio >= janelaMs) {
-      limites.set(chave, { inicio: agora, total: 1 });
+      limites.set(chave, { inicio: agora, total: 1, janelaMs });
       return next();
     }
     if (atual.total >= maximo) {
@@ -44,6 +56,14 @@ function limitarRequisicoes(janelaMs, maximo) {
     next();
   };
 }
+// Descarta contadores vencidos; sem isso o Map cresceria para sempre (um
+// item por IP + rota já usados).
+setInterval(() => {
+  const agora = Date.now();
+  for (const [chave, atual] of limites) {
+    if (agora - atual.inicio >= atual.janelaMs) limites.delete(chave);
+  }
+}, 60 * 1000).unref();
 
 // Conta única de administrador, sem tela pública de cadastro — só existe
 // via estas duas variáveis de ambiente. Os valores abaixo são apenas um
@@ -59,20 +79,38 @@ if (!process.env.ADMIN_EMAIL || (!process.env.ADMIN_SENHA && !process.env.ADMIN_
   );
 }
 
-function paraDataHoraMysql(valor = new Date()) {
-  const data = new Date(valor);
-  if (Number.isNaN(data.getTime())) {
-    return valor;
+// Datas ficam em memória — e vão para o navegador — como ISO 8601 em UTC
+// ("2026-09-18T18:01:52.000Z"), que identifica um instante sem ambiguidade.
+// O formato "AAAA-MM-DD HH:MM:SS" do MySQL não tem fuso: o navegador o
+// interpretaria no horário DELE, errando horas quando servidor e cliente
+// estão em fusos diferentes (e o Safari nem consegue ler esse formato). A
+// conversão para o formato do MySQL é feita só ao gravar (ver server/db.js).
+function paraIso(valor = new Date()) {
+  return new Date(valor).toISOString();
+}
+
+// Validações de entrada do cadastro e da troca de senha.
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const SENHA_MINIMA = 4;
+const SENHA_MAXIMA = 72; // o bcrypt só considera os 72 primeiros bytes da senha
+
+function somenteDigitos(valor) {
+  return String(valor ?? '').replace(/\D/g, '');
+}
+
+// Devolve a mensagem de erro (ou null se a senha é aceitável).
+function validarSenha(senha) {
+  if (typeof senha !== 'string' || senha.length < SENHA_MINIMA) {
+    return `A senha deve ter pelo menos ${SENHA_MINIMA} caracteres.`;
   }
+  if (senha.length > SENHA_MAXIMA) {
+    return `A senha deve ter no máximo ${SENHA_MAXIMA} caracteres.`;
+  }
+  return null;
+}
 
-  const ano = data.getFullYear();
-  const mes = String(data.getMonth() + 1).padStart(2, '0');
-  const dia = String(data.getDate()).padStart(2, '0');
-  const horas = String(data.getHours()).padStart(2, '0');
-  const minutos = String(data.getMinutes()).padStart(2, '0');
-  const segundos = String(data.getSeconds()).padStart(2, '0');
-
-  return `${ano}-${mes}-${dia} ${horas}:${minutos}:${segundos}`;
+function telefoneValido(telefone) {
+  return telefone === undefined || telefone === null || (typeof telefone === 'string' && telefone.length <= 20);
 }
 
 function coordenadasValidas(latitude, longitude) {
@@ -91,8 +129,12 @@ function coordenadasValidas(latitude, longitude) {
 // express.json() lê o corpo das requisições (ex.: os dados de um
 // formulário enviados em JSON) e disponibiliza em req.body.
 app.use(express.json());
-app.get('/health', async (req, res) => {
-  res.json({ status: 'ok' });
+
+// Verificação de saúde (usada por monitoramento/hospedagem). Mostra onde os
+// dados estão sendo guardados e se a última gravação no MySQL falhou.
+app.get('/health', (req, res) => {
+  const { armazenamento, ultimaFalha } = estadoPersistencia();
+  res.json({ status: ultimaFalha ? 'degradado' : 'ok', armazenamento, persistenciaComFalha: Boolean(ultimaFalha) });
 });
 
 // express.static serve os arquivos da pasta "public" diretamente (HTML,
@@ -111,7 +153,11 @@ app.get('/api/categorias', (req, res) => {
   res.json(db.categorias);
 });
 
-app.get('/api/localizacao/geocodificar', limitarRequisicoes(60 * 1000, 30), async (req, res) => {
+// Exige login de cliente: a rota repassa consultas ao Nominatim público
+// (limite de ~1 por segundo para todo o servidor), então não pode ficar
+// aberta a qualquer visitante — bastaria um script para travar a fila e
+// impedir os clientes de localizar o próprio endereço.
+app.get('/api/localizacao/geocodificar', autenticar(['cliente']), limitarRequisicoes(60 * 1000, 30), assincrono(async (req, res) => {
   const endereco = typeof req.query.endereco === 'string' ? req.query.endereco : '';
   if (endereco.trim().length < 5) {
     return res.status(400).json({ erro: 'Informe um endereço válido para localizar.' });
@@ -127,7 +173,7 @@ app.get('/api/localizacao/geocodificar', limitarRequisicoes(60 * 1000, 30), asyn
     console.error('Falha na geocodificação:', erro.message);
     res.status(502).json({ erro: 'Não foi possível localizar o endereço agora. Tente novamente.' });
   }
-});
+}));
 
 // ---------------------------------------------------------------
 // Autenticação
@@ -137,7 +183,7 @@ app.get('/api/localizacao/geocodificar', limitarRequisicoes(60 * 1000, 30), asyn
 // corpo da requisição decide qual). Depois de cadastrar, já efetua o
 // login automaticamente (devolve um token), para o usuário não precisar
 // preencher o formulário de login logo em seguida.
-app.post('/api/auth/registrar', limitarRequisicoes(60 * 1000, 10), async (req, res) => {
+app.post('/api/auth/registrar', limitarRequisicoes(60 * 1000, 10), assincrono(async (req, res) => {
   const { tipo, nome, email, senha, telefone, cpf, categoriaId } = req.body;
 
   // --- validações básicas de entrada ---
@@ -150,11 +196,29 @@ app.post('/api/auth/registrar', limitarRequisicoes(60 * 1000, 10), async (req, r
     typeof email !== 'string' ||
     !email.trim() ||
     typeof senha !== 'string' ||
-    senha.length < 4 ||
+    !senha ||
     typeof cpf !== 'string' ||
     !cpf.trim()
   ) {
     return res.status(400).json({ erro: 'Preencha nome, email, senha e CPF.' });
+  }
+  const emailNormalizado = email.trim().toLowerCase();
+  const cpfDigitos = somenteDigitos(cpf);
+  if (nome.trim().length > 120) {
+    return res.status(400).json({ erro: 'O nome deve ter no máximo 120 caracteres.' });
+  }
+  if (!EMAIL_REGEX.test(emailNormalizado) || emailNormalizado.length > 150) {
+    return res.status(400).json({ erro: 'Informe um email válido.' });
+  }
+  if (cpfDigitos.length !== 11) {
+    return res.status(400).json({ erro: 'Informe um CPF válido, com 11 dígitos.' });
+  }
+  const erroSenha = validarSenha(senha);
+  if (erroSenha) {
+    return res.status(400).json({ erro: erroSenha });
+  }
+  if (!telefoneValido(telefone)) {
+    return res.status(400).json({ erro: 'Informe um telefone válido (até 20 caracteres).' });
   }
   if (tipo === 'prestador' && !db.categorias.some((c) => c.id === Number(categoriaId))) {
     return res.status(400).json({ erro: 'Selecione uma categoria de atendimento válida.' });
@@ -162,14 +226,17 @@ app.post('/api/auth/registrar', limitarRequisicoes(60 * 1000, 10), async (req, r
 
   // "colecao" aponta para o array certo (clientes ou prestadores),
   // evitando duplicar o código de cadastro para os dois casos.
-  const emailNormalizado = email.trim().toLowerCase();
   const colecao = tipo === 'cliente' ? db.clientes : db.prestadores;
 
   // Equivalente às restrições UNIQUE (email, cpf) do banco relacional:
-  // aqui quem garante que não existam duplicados é o próprio código.
-  const jaExiste = colecao.some((u) => u.email.toLowerCase() === emailNormalizado || u.cpf === cpf.trim());
-  if (jaExiste) {
-    return res.status(409).json({ erro: 'Já existe um cadastro com este email ou CPF.' });
+  // aqui quem garante que não existam duplicados é o próprio código. O CPF é
+  // comparado só pelos dígitos, para "529.982.247-25" e "52998224725" serem
+  // reconhecidos como o mesmo.
+  const jaExiste = () =>
+    colecao.some((u) => u.email.toLowerCase() === emailNormalizado || somenteDigitos(u.cpf) === cpfDigitos);
+  const respostaDuplicado = { erro: 'Já existe um cadastro com este email ou CPF.' };
+  if (jaExiste()) {
+    return res.status(409).json(respostaDuplicado);
   }
 
   // Nunca guardamos a senha em texto puro: bcrypt gera um hash (texto
@@ -178,14 +245,22 @@ app.post('/api/auth/registrar', limitarRequisicoes(60 * 1000, 10), async (req, r
   // sem nunca precisar "descriptografar" nada.
   const senhaHash = await bcrypt.hash(senha, 10);
 
+  // O bcrypt acima é assíncrono: enquanto ele roda, outra requisição com o
+  // mesmo email/CPF pode ter terminado o cadastro. Conferimos de novo aqui —
+  // daqui até o "push" não há mais nenhum await, então nada se intromete.
+  if (jaExiste()) {
+    return res.status(409).json(respostaDuplicado);
+  }
+
   const usuario = {
     id: crypto.randomUUID(), // identificador único (equivalente ao SERIAL/IDENTITY do SQL)
-    nome,
+    nome: nome.trim(),
     email: emailNormalizado,
     senhaHash,
-    telefone: telefone || null,
-    cpf: cpf.trim(),
-    dataCadastro: paraDataHoraMysql()
+    telefone: typeof telefone === 'string' && telefone.trim() ? telefone.trim() : null,
+    // Guardado sempre no formato 000.000.000-00, igual à máscara da tela.
+    cpf: `${cpfDigitos.slice(0, 3)}.${cpfDigitos.slice(3, 6)}.${cpfDigitos.slice(6, 9)}-${cpfDigitos.slice(9)}`,
+    dataCadastro: paraIso()
   };
 
   // Prestador tem campos extras que cliente não tem (ver tabela
@@ -205,11 +280,11 @@ app.post('/api/auth/registrar', limitarRequisicoes(60 * 1000, 10), async (req, r
   // "paraPublico" remove a senhaHash antes de devolver o usuário — o
   // frontend nunca deve receber esse dado, nem por engano.
   res.status(201).json({ token, usuario: paraPublico(tipo, usuario) });
-});
+}));
 
 // Login: recebe tipo + email + senha, confere a senha contra o hash
 // salvo e, se bater, devolve um novo token de sessão.
-app.post('/api/auth/login', limitarRequisicoes(60 * 1000, 10), async (req, res) => {
+app.post('/api/auth/login', limitarRequisicoes(60 * 1000, 10), assincrono(async (req, res) => {
   const { tipo, email, senha } = req.body;
   const emailNormalizado = typeof email === 'string' ? email.trim().toLowerCase() : '';
   const colecao = tipo === 'cliente' ? db.clientes : tipo === 'prestador' ? db.prestadores : null;
@@ -229,13 +304,22 @@ app.post('/api/auth/login', limitarRequisicoes(60 * 1000, 10), async (req, res) 
 
   const token = criarSessao(tipo, usuario.id);
   res.json({ token, usuario: paraPublico(tipo, usuario) });
-});
+}));
 
-// Logout: apenas invalida o token atual (ver auth-middleware.js).
-app.post('/api/auth/logout', autenticar(), (req, res) => {
+// Logout: invalida o token atual (ver auth-middleware.js). Prestador que sai
+// também deixa de estar "disponível" — senão continuaria marcado assim no
+// banco sem ninguém logado para atender.
+app.post('/api/auth/logout', autenticar(), assincrono(async (req, res) => {
+  if (req.sessao.tipo === 'prestador') {
+    const prestador = buscarUsuario('prestador', req.sessao.id);
+    if (prestador?.disponivel) {
+      prestador.disponivel = false;
+      await salvar();
+    }
+  }
   encerrarSessao(req.token);
   res.status(204).end(); // 204 = "sucesso, sem conteúdo para devolver"
-});
+}));
 
 // Usada pelo frontend ao carregar a página: se já existir um token
 // salvo no navegador (localStorage), essa rota confirma se ele ainda é
@@ -247,26 +331,43 @@ app.get('/api/auth/me', autenticar(), (req, res) => {
 });
 
 // Atualiza dados do usuário logado (nome, telefone e/ou senha).
-app.patch('/api/auth/atualizar', autenticar(), async (req, res) => {
+app.patch('/api/auth/atualizar', autenticar(['cliente', 'prestador']), assincrono(async (req, res) => {
   const usuario = buscarUsuario(req.sessao.tipo, req.sessao.id);
   if (!usuario) return res.status(404).json({ erro: 'Usuário não encontrado.' });
 
+  // Valida tudo ANTES de alterar qualquer campo, para uma requisição
+  // recusada não deixar o usuário meio atualizado em memória.
   const { nome, telefone, senha } = req.body;
-  if (typeof nome === 'string' && nome.trim()) usuario.nome = nome.trim();
+  if (nome !== undefined && (typeof nome !== 'string' || !nome.trim() || nome.trim().length > 120)) {
+    return res.status(400).json({ erro: 'Informe um nome válido (até 120 caracteres).' });
+  }
+  if (!telefoneValido(telefone)) {
+    return res.status(400).json({ erro: 'Informe um telefone válido (até 20 caracteres).' });
+  }
+  const trocaSenha = senha !== undefined && senha !== '';
+  if (trocaSenha) {
+    const erroSenha = validarSenha(senha);
+    if (erroSenha) return res.status(400).json({ erro: erroSenha });
+  }
+
+  if (typeof nome === 'string') usuario.nome = nome.trim();
   if (typeof telefone === 'string') usuario.telefone = telefone.trim() || null;
-  if (senha) {
+  if (trocaSenha) {
     usuario.senhaHash = await bcrypt.hash(senha, 10);
+    // Quem estivesse logado em outro aparelho (ou com a senha antiga
+    // vazada) perde o acesso; a sessão atual continua valendo.
+    encerrarSessoesDoUsuario(req.sessao.tipo, req.sessao.id, req.token);
   }
 
   await salvar();
   res.json(paraPublico(req.sessao.tipo, usuario));
-});
+}));
 
 // Pede a redefinição de senha: gera um token válido por 1 hora e envia
 // por e-mail (ver server/email.js). Responde sempre com sucesso
 // genérico, exista ou não o e-mail informado — evita que alguém use esta
 // rota para descobrir quais e-mails estão cadastrados no sistema.
-app.post('/api/auth/esqueci-senha', limitarRequisicoes(60 * 1000, 3), async (req, res) => {
+app.post('/api/auth/esqueci-senha', limitarRequisicoes(60 * 1000, 3), assincrono(async (req, res) => {
   const { tipo, email } = req.body;
   const emailNormalizado = typeof email === 'string' ? email.trim().toLowerCase() : '';
   const colecao = tipo === 'cliente' ? db.clientes : tipo === 'prestador' ? db.prestadores : null;
@@ -275,27 +376,39 @@ app.post('/api/auth/esqueci-senha', limitarRequisicoes(60 * 1000, 3), async (req
   if (usuario) {
     const token = crypto.randomUUID();
     const expiraEm = new Date(Date.now() + 60 * 60 * 1000); // 1 hora
-    db.redefinicoesSenha = db.redefinicoesSenha.filter((r) => r.usuarioId !== usuario.id);
-    db.redefinicoesSenha.push({ token, tipo, usuarioId: usuario.id, expiraEm: paraDataHoraMysql(expiraEm) });
+    const agora = new Date();
+    // Aproveita para descartar tokens vencidos (senão só sairiam do banco
+    // quando o servidor fosse reiniciado).
+    db.redefinicoesSenha = db.redefinicoesSenha.filter(
+      (r) => r.usuarioId !== usuario.id && new Date(r.expiraEm) > agora
+    );
+    db.redefinicoesSenha.push({ token, tipo, usuarioId: usuario.id, expiraEm: paraIso(expiraEm) });
     await salvar();
-    await enviarEmailRedefinicao({ paraEmail: usuario.email, nome: usuario.nome, tipo, token });
+    // Sem "await" de propósito: o envio de e-mail leva vários segundos e só
+    // acontece quando o e-mail existe — esperar por ele deixaria a resposta
+    // mais lenta para e-mails cadastrados e permitiria descobri-los medindo
+    // o tempo. (enviarEmailRedefinicao já trata os próprios erros.)
+    enviarEmailRedefinicao({ paraEmail: usuario.email, nome: usuario.nome, tipo, token }).catch((erro) => {
+      console.warn('[e-mail] Falha inesperada ao enviar redefinição de senha:', erro.message);
+    });
   }
 
   res.json({ mensagem: 'Se o email informado estiver cadastrado, enviaremos um link de redefinição.' });
-});
+}));
 
 // Conclui a redefinição: valida o token (existe e não expirou) e troca a
 // senha. O token é descartado logo em seguida, funcione ou não — um
 // token só pode ser usado uma vez.
-app.post('/api/auth/redefinir-senha', async (req, res) => {
+app.post('/api/auth/redefinir-senha', limitarRequisicoes(60 * 1000, 10), assincrono(async (req, res) => {
   const { token, novaSenha } = req.body;
-  const redefinicao = db.redefinicoesSenha.find((r) => r.token === token);
+  const redefinicao = typeof token === 'string' && db.redefinicoesSenha.find((r) => r.token === token);
 
   if (!redefinicao || new Date(redefinicao.expiraEm) < new Date()) {
     return res.status(400).json({ erro: 'Link de redefinição inválido ou expirado. Peça um novo.' });
   }
-  if (!novaSenha || novaSenha.length < 4) {
-    return res.status(400).json({ erro: 'A nova senha deve ter pelo menos 4 caracteres.' });
+  const erroSenha = validarSenha(novaSenha);
+  if (erroSenha) {
+    return res.status(400).json({ erro: erroSenha });
   }
 
   const usuario = buscarUsuario(redefinicao.tipo, redefinicao.usuarioId);
@@ -303,23 +416,27 @@ app.post('/api/auth/redefinir-senha', async (req, res) => {
 
   usuario.senhaHash = await bcrypt.hash(novaSenha, 10);
   db.redefinicoesSenha = db.redefinicoesSenha.filter((r) => r.token !== token);
+  // Redefinir a senha costuma significar "perdi o controle da conta": todas
+  // as sessões abertas com a senha antiga deixam de valer.
+  encerrarSessoesDoUsuario(redefinicao.tipo, redefinicao.usuarioId);
   await salvar();
 
   res.json({ mensagem: 'Senha redefinida com sucesso.' });
-});
+}));
 
 // Login exclusivo do administrador — não existe cadastro público para
 // este tipo de usuário, só as credenciais fixas definidas por variável
 // de ambiente (ver ADMIN_EMAIL/ADMIN_SENHA acima).
-app.post('/api/auth/login-admin', async (req, res) => {
+app.post('/api/auth/login-admin', limitarRequisicoes(60 * 1000, 10), assincrono(async (req, res) => {
   const { email, senha } = req.body;
   const senhaValida = typeof senha === 'string' && (await bcrypt.compare(senha, ADMIN_SENHA_HASH));
-  if (email !== ADMIN_EMAIL || !senhaValida) {
+  const emailValido = typeof email === 'string' && email.trim().toLowerCase() === ADMIN_EMAIL.toLowerCase();
+  if (!emailValido || !senhaValida) {
     return res.status(401).json({ erro: 'Email ou senha incorretos.' });
   }
   const token = criarSessao('admin', 'admin');
   res.json({ token, usuario: { id: 'admin', nome: 'Administrador' } });
-});
+}));
 
 // ---------------------------------------------------------------
 // Prestador: disponibilidade e localização
@@ -330,29 +447,33 @@ app.post('/api/auth/login-admin', async (req, res) => {
 // uma nova localização GPS. Só atualiza os campos que vierem preenchidos
 // no corpo da requisição (permite atualizar só a localização, ou só a
 // disponibilidade, sem precisar mandar tudo de novo).
-app.patch('/api/prestador/disponibilidade', autenticar(['prestador']), async (req, res) => {
+app.patch('/api/prestador/disponibilidade', autenticar(['prestador']), assincrono(async (req, res) => {
   const prestador = buscarUsuario('prestador', req.sessao.id);
   const { disponivel, latitude, longitude } = req.body;
 
+  // Valida tudo antes de alterar qualquer campo: uma requisição recusada com
+  // 400 não pode deixar o prestador com a disponibilidade já trocada.
+  const temLocalizacao = latitude !== undefined || longitude !== undefined;
+  if (temLocalizacao && !coordenadasValidas(latitude, longitude)) {
+    return res.status(400).json({ erro: 'Informe latitude e longitude válidas.' });
+  }
+
   if (typeof disponivel === 'boolean') prestador.disponivel = disponivel;
-  if (latitude !== undefined || longitude !== undefined) {
-    if (!coordenadasValidas(latitude, longitude)) {
-      return res.status(400).json({ erro: 'Informe latitude e longitude válidas.' });
-    }
+  if (temLocalizacao) {
     prestador.latitude = latitude;
     prestador.longitude = longitude;
   }
 
   await salvar();
   res.json(paraPublico('prestador', prestador));
-});
+}));
 
 // Cliente atualiza a própria posição durante um chamado ativo. O prestador
 // vinculado recebe essas coordenadas pela rota /chamados/atual.
-app.patch('/api/chamados/:id/localizacao', autenticar(['cliente']), async (req, res) => {
+app.patch('/api/chamados/:id/localizacao', autenticar(['cliente']), assincrono(async (req, res) => {
   const chamado = db.chamados.find((c) => c.id === req.params.id && c.clienteId === req.sessao.id);
   if (!chamado) return res.status(404).json({ erro: 'Chamado não encontrado.' });
-  if (!['aberto', 'aceito', 'em_andamento'].includes(chamado.status)) {
+  if (!STATUS_ATIVOS.includes(chamado.status)) {
     return res.status(409).json({ erro: 'Este chamado não está ativo.' });
   }
 
@@ -365,7 +486,7 @@ app.patch('/api/chamados/:id/localizacao', autenticar(['cliente']), async (req, 
   chamado.longitude = longitude;
   await salvar();
   res.json(montarChamado(chamado));
-});
+}));
 
 // Perfil de avaliações do próprio prestador: nota média, total de
 // avaliações e a lista de comentários recebidos (mais recente primeiro)
@@ -393,7 +514,7 @@ app.get('/api/prestador/me/avaliacoes', autenticar(['prestador']), (req, res) =>
 
 // Cliente abre um novo chamado de socorro. Nasce sempre com
 // status "aberto" e prestadorId nulo — ninguém foi vinculado ainda.
-app.post('/api/chamados', autenticar(['cliente']), async (req, res) => {
+app.post('/api/chamados', autenticar(['cliente']), assincrono(async (req, res) => {
   const { categoriaId, latitude, longitude, endereco, descricao } = req.body;
 
   if (!db.categorias.some((c) => c.id === Number(categoriaId))) {
@@ -402,12 +523,21 @@ app.post('/api/chamados', autenticar(['cliente']), async (req, res) => {
   if (!coordenadasValidas(latitude, longitude)) {
     return res.status(400).json({ erro: 'Informe a localização (latitude/longitude).' });
   }
+  // Tipo e tamanho são checados aqui porque um valor inválido que entrasse em
+  // "db" faria TODAS as gravações seguintes falharem no MySQL (o salvar()
+  // regrava o estado inteiro, inclusive este chamado).
+  if (endereco != null && (typeof endereco !== 'string' || endereco.length > 255)) {
+    return res.status(400).json({ erro: 'O endereço deve ter no máximo 255 caracteres.' });
+  }
+  if (descricao != null && (typeof descricao !== 'string' || descricao.length > 1000)) {
+    return res.status(400).json({ erro: 'A descrição deve ter no máximo 1000 caracteres.' });
+  }
 
   // Regra simples de bom uso: um cliente não pode abrir um segundo
   // chamado enquanto já tiver um em andamento (aberto, aceito ou a
   // caminho). Evita pedidos duplicados por engano.
   const jaTemChamadoAberto = db.chamados.some(
-    (c) => c.clienteId === req.sessao.id && ['aberto', 'aceito', 'em_andamento'].includes(c.status)
+    (c) => c.clienteId === req.sessao.id && STATUS_ATIVOS.includes(c.status)
   );
   if (jaTemChamadoAberto) {
     return res.status(409).json({ erro: 'Você já tem um chamado em andamento.' });
@@ -420,10 +550,10 @@ app.post('/api/chamados', autenticar(['cliente']), async (req, res) => {
     prestadorId: null, // preenchido só quando um prestador aceitar (ver rota /aceitar)
     latitude,
     longitude,
-    endereco: endereco || null,
-    descricao: descricao || null,
+    endereco: endereco?.trim() || null,
+    descricao: descricao?.trim() || null,
     status: 'aberto', // ciclo de vida: aberto -> aceito -> em_andamento -> concluido (ou cancelado)
-    dataAbertura: paraDataHoraMysql(),
+    dataAbertura: paraIso(),
     dataAceite: null,
     dataConclusao: null
   };
@@ -431,7 +561,7 @@ app.post('/api/chamados', autenticar(['cliente']), async (req, res) => {
   await salvar();
 
   res.status(201).json(montarChamado(chamado));
-});
+}));
 
 // Lista, para o prestador logado, os chamados abertos da categoria dele
 // que estejam dentro de um raio de distância (busca simples por
@@ -444,6 +574,10 @@ app.post('/api/chamados', autenticar(['cliente']), async (req, res) => {
 app.get('/api/chamados/disponiveis', autenticar(['prestador']), (req, res) => {
   const prestador = buscarUsuario('prestador', req.sessao.id);
   const raioKm = Number(req.query.raio) || 15; // raio padrão: 15 km
+
+  // O interruptor "Disponível" do painel vale de verdade: quem está
+  // indisponível não recebe chamados na lista.
+  if (!prestador.disponivel) return res.json([]);
 
   const disponiveis = db.chamados
     .filter((c) => c.status === 'aberto' && c.categoriaId === prestador.categoriaId)
@@ -472,7 +606,7 @@ app.get('/api/chamados/disponiveis', autenticar(['prestador']), (req, res) => {
 // "aceitar" cheguem quase no mesmo instante, elas são processadas uma
 // de cada vez, nunca ao mesmo tempo — a segunda sempre vai encontrar
 // chamado.prestadorId já preenchido e recebe o erro 409.
-app.post('/api/chamados/:id/aceitar', autenticar(['prestador']), async (req, res) => {
+app.post('/api/chamados/:id/aceitar', autenticar(['prestador']), assincrono(async (req, res) => {
   const chamado = db.chamados.find((c) => c.id === req.params.id);
   if (!chamado) return res.status(404).json({ erro: 'Chamado não encontrado.' });
 
@@ -485,21 +619,31 @@ app.post('/api/chamados/:id/aceitar', autenticar(['prestador']), async (req, res
   if (chamado.status !== 'aberto' || chamado.prestadorId !== null) {
     return res.status(409).json({ erro: 'Este chamado já foi aceito por outro prestador.' });
   }
+  if (!prestador.disponivel) {
+    return res.status(403).json({ erro: 'Ative a opção "Disponível" para aceitar chamados.' });
+  }
+  // Um atendimento por vez: o painel do prestador só mostra UM chamado em
+  // andamento (ver /chamados/atual), então um segundo aceite ficaria preso,
+  // invisível para ele e sem resposta para o cliente.
+  const jaAtendendo = db.chamados.some((c) => c.prestadorId === prestador.id && STATUS_ATIVOS.includes(c.status));
+  if (jaAtendendo) {
+    return res.status(409).json({ erro: 'Conclua ou cancele o atendimento atual antes de aceitar outro chamado.' });
+  }
 
   chamado.prestadorId = prestador.id; // "trava" o chamado para este prestador
   chamado.status = 'aceito';
-  chamado.dataAceite = paraDataHoraMysql();
+  chamado.dataAceite = paraIso();
   await salvar();
 
   res.json(montarChamado(chamado));
-});
+}));
 
 // Devolve o chamado "ativo" do usuário logado (cliente ou prestador),
 // ou seja, o que ainda não terminou (aberto, aceito ou a caminho). Usada
 // pelo frontend para decidir se mostra o formulário de "pedir socorro" /
 // lista de chamados disponíveis, ou a tela de acompanhamento.
 app.get('/api/chamados/atual', autenticar(), (req, res) => {
-  const emAndamento = ['aberto', 'aceito', 'em_andamento'];
+  const emAndamento = STATUS_ATIVOS;
 
   // Para o cliente, um chamado recém-concluído e ainda sem avaliação também
   // conta como "atual": é o que mantém a tela de acompanhamento (com a
@@ -521,7 +665,7 @@ app.get('/api/chamados/atual', autenticar(), (req, res) => {
 
 // Prestador avisa que chegou ao local e vai começar o atendimento
 // (aceito -> em_andamento).
-app.post('/api/chamados/:id/iniciar', autenticar(['prestador']), async (req, res) => {
+app.post('/api/chamados/:id/iniciar', autenticar(['prestador']), assincrono(async (req, res) => {
   const chamado = pegarChamadoDoPrestador(req);
   if (!chamado) return res.status(404).json({ erro: 'Chamado não encontrado.' });
   if (chamado.status !== 'aceito') {
@@ -530,26 +674,26 @@ app.post('/api/chamados/:id/iniciar', autenticar(['prestador']), async (req, res
   chamado.status = 'em_andamento';
   await salvar();
   res.json(montarChamado(chamado));
-});
+}));
 
 // Prestador marca o atendimento como concluído (aceito ou em_andamento
 // -> concluido). Permite concluir direto a partir de "aceito" também,
 // caso o prestador esqueça de marcar "cheguei ao local" antes.
-app.post('/api/chamados/:id/concluir', autenticar(['prestador']), async (req, res) => {
+app.post('/api/chamados/:id/concluir', autenticar(['prestador']), assincrono(async (req, res) => {
   const chamado = pegarChamadoDoPrestador(req);
   if (!chamado) return res.status(404).json({ erro: 'Chamado não encontrado.' });
   if (!['aceito', 'em_andamento'].includes(chamado.status)) {
     return res.status(409).json({ erro: 'Este chamado não pode ser concluído neste momento.' });
   }
   chamado.status = 'concluido';
-  chamado.dataConclusao = paraDataHoraMysql();
+  chamado.dataConclusao = paraIso();
   await salvar();
   res.json(montarChamado(chamado));
-});
+}));
 
 // Cliente cancela o próprio chamado — permitido enquanto ninguém aceitou
 // (status "aberto") ou até 1 minuto após o aceite pelo prestador.
-app.post('/api/chamados/:id/cancelar', autenticar(['cliente']), async (req, res) => {
+app.post('/api/chamados/:id/cancelar', autenticar(['cliente']), assincrono(async (req, res) => {
   const chamado = db.chamados.find((c) => c.id === req.params.id && c.clienteId === req.sessao.id);
   if (!chamado) return res.status(404).json({ erro: 'Chamado não encontrado.' });
 
@@ -573,8 +717,9 @@ app.post('/api/chamados/:id/cancelar', autenticar(['cliente']), async (req, res)
       return res.status(409).json({ erro: 'Só é possível cancelar até 1 minuto após o aceite.' });
     }
 
-    // Cancelamento dentro do prazo: liberamos o chamado para outros
-    // prestadores e limpamos o prestador vinculado.
+    // Cancelamento dentro do prazo: o chamado é encerrado (não volta para a
+    // fila — quem cancelou foi o próprio cliente) e o prestador vinculado
+    // fica livre para aceitar outro.
     chamado.status = 'cancelado';
     chamado.prestadorId = null;
     chamado.dataAceite = null;
@@ -583,10 +728,10 @@ app.post('/api/chamados/:id/cancelar', autenticar(['cliente']), async (req, res)
   }
 
   return res.status(409).json({ erro: 'Só é possível cancelar enquanto não aceito ou dentro de 1 minuto após o aceite.' });
-});
+}));
 
 // Prestador cancela um chamado que havia aceitado (libera para a fila).
-app.post('/api/chamados/:id/cancelar-prestador', autenticar(['prestador']), async (req, res) => {
+app.post('/api/chamados/:id/cancelar-prestador', autenticar(['prestador']), assincrono(async (req, res) => {
   const prestador = buscarUsuario('prestador', req.sessao.id);
   const chamado = db.chamados.find((c) => c.id === req.params.id && c.prestadorId === prestador.id);
   if (!chamado) return res.status(404).json({ erro: 'Chamado não encontrado para este prestador.' });
@@ -599,7 +744,7 @@ app.post('/api/chamados/:id/cancelar-prestador', autenticar(['prestador']), asyn
   chamado.dataAceite = null;
   await salvar();
   res.json(montarChamado(chamado));
-});
+}));
 
 // Histórico de chamados já finalizados (concluídos ou cancelados) do
 // usuário logado — cliente vê os que ele abriu, prestador vê os que ele
@@ -622,7 +767,7 @@ app.get('/api/chamados/historico', autenticar(), (req, res) => {
 // opcional). A checagem "já foi avaliado?" é o que garante, no código,
 // o mesmo efeito da restrição UNIQUE(id_chamado) do banco relacional:
 // no máximo uma avaliação por chamado.
-app.post('/api/chamados/:id/avaliacao', autenticar(['cliente']), async (req, res) => {
+app.post('/api/chamados/:id/avaliacao', autenticar(['cliente']), assincrono(async (req, res) => {
   const chamado = db.chamados.find((c) => c.id === req.params.id && c.clienteId === req.sessao.id);
   if (!chamado) return res.status(404).json({ erro: 'Chamado não encontrado.' });
   if (chamado.status !== 'concluido') {
@@ -645,13 +790,13 @@ app.post('/api/chamados/:id/avaliacao', autenticar(['cliente']), async (req, res
     chamadoId: chamado.id,
     nota: notaNum,
     comentario: req.body.comentario?.trim() || null,
-    dataAvaliacao: paraDataHoraMysql()
+    dataAvaliacao: paraIso()
   };
   db.avaliacoes.push(avaliacao);
   await salvar();
 
   res.status(201).json(avaliacao);
-});
+}));
 
 // ---------------------------------------------------------------
 // Administração (painel restrito, só acessível pela conta fixa de
@@ -693,31 +838,31 @@ app.get('/api/admin/chamados', autenticar(['admin']), (req, res) => {
 // Cancelamento por moderação: o admin pode encerrar qualquer chamado que
 // ainda esteja em andamento, independente de prazos (diferente do
 // cancelamento pelo próprio cliente, que tem a regra do 1 minuto).
-app.post('/api/admin/chamados/:id/cancelar', autenticar(['admin']), async (req, res) => {
+app.post('/api/admin/chamados/:id/cancelar', autenticar(['admin']), assincrono(async (req, res) => {
   const chamado = db.chamados.find((c) => c.id === req.params.id);
   if (!chamado) return res.status(404).json({ erro: 'Chamado não encontrado.' });
-  if (!['aberto', 'aceito', 'em_andamento'].includes(chamado.status)) {
+  if (!STATUS_ATIVOS.includes(chamado.status)) {
     return res.status(409).json({ erro: 'Este chamado já está finalizado.' });
   }
   chamado.status = 'cancelado';
   await salvar();
   res.json(montarChamado(chamado));
-});
+}));
 
 // Categorias: o admin pode ver e renomear (id continua fixo, 1/2/3/4).
 app.get('/api/admin/categorias', autenticar(['admin']), (req, res) => {
   res.json(db.categorias);
 });
-app.patch('/api/admin/categorias/:id', autenticar(['admin']), async (req, res) => {
+app.patch('/api/admin/categorias/:id', autenticar(['admin']), assincrono(async (req, res) => {
   const categoria = db.categorias.find((c) => c.id === Number(req.params.id));
   if (!categoria) return res.status(404).json({ erro: 'Categoria não encontrada.' });
-  if (typeof req.body.nome !== 'string' || !req.body.nome.trim()) {
-    return res.status(400).json({ erro: 'Informe um nome válido.' });
+  if (typeof req.body.nome !== 'string' || !req.body.nome.trim() || req.body.nome.trim().length > 50) {
+    return res.status(400).json({ erro: 'Informe um nome válido (até 50 caracteres).' });
   }
   categoria.nome = req.body.nome.trim();
   await salvar();
   res.json(categoria);
-});
+}));
 
 // ---------------------------------------------------------------
 // Funções auxiliares
@@ -810,6 +955,34 @@ function montarChamado(chamado) {
   };
 }
 
+// Rotas /api/* que não existem respondem JSON (em vez da página HTML de erro
+// padrão do Express), que é o que o frontend sabe ler.
+app.use('/api', (req, res) => {
+  res.status(404).json({ erro: 'Rota não encontrada.' });
+});
+
+// Último middleware: recebe qualquer erro das rotas (inclusive os das rotas
+// async, via "assincrono") e do próprio Express, como JSON malformado. O
+// tratamento padrão do Express devolveria uma página HTML com o stack trace
+// — informação interna que não deve chegar ao usuário.
+app.use((erro, req, res, next) => {
+  if (res.headersSent) return next(erro);
+  if (erro.type === 'entity.parse.failed') {
+    return res.status(400).json({ erro: 'Corpo da requisição inválido.' });
+  }
+  if (erro.type === 'entity.too.large') {
+    return res.status(413).json({ erro: 'Requisição grande demais.' });
+  }
+  console.error(`Erro em ${req.method} ${req.path}:`, erro);
+  res.status(500).json({ erro: 'Erro interno. Tente novamente em instantes.' });
+});
+
+// Rede de segurança: uma Promise rejeitada que ninguém tratou é registrada em
+// vez de derrubar o servidor para todos os usuários.
+process.on('unhandledRejection', (motivo) => {
+  console.error('Promise rejeitada sem tratamento:', motivo);
+});
+
 const HOST = process.env.HOST || '0.0.0.0';
 const TLS_CERT_FILE = process.env.TLS_CERT_FILE;
 const TLS_KEY_FILE = process.env.TLS_KEY_FILE;
@@ -869,12 +1042,36 @@ function obterIpLocal() {
   return null;
 }
 
+// As sessões só existem em memória: ao (re)iniciar o servidor ninguém está
+// logado. Prestadores que ficaram gravados como "disponíveis" (por terem
+// fechado a aba ou pelo servidor ter caído, sem "Sair") estariam aparecendo
+// como disponíveis sem poder atender. Cada um volta a ativar o interruptor
+// quando entrar de novo.
+async function zerarDisponibilidadeDosPrestadores() {
+  const disponiveis = db.prestadores.filter((p) => p.disponivel);
+  if (disponiveis.length === 0) return;
+  disponiveis.forEach((p) => {
+    p.disponivel = false;
+  });
+  await salvar();
+  console.log(`${disponiveis.length} prestador(es) estavam marcados como disponíveis sem sessão ativa; agora constam como indisponíveis.`);
+}
+
 inicializarBanco()
   .catch((erro) => {
     console.warn('Inicialização do banco falhou; iniciando servidor em modo fallback.', erro.message);
   })
-  .finally(async () => {
-    const servidor = await criarServidor();
+  .then(zerarDisponibilidadeDosPrestadores)
+  .then(criarServidor)
+  .then((servidor) => {
+    servidor.on('error', (erro) => {
+      console.error(
+        erro.code === 'EADDRINUSE'
+          ? `A porta ${PORTA} já está em uso. Feche o outro processo ou defina outra porta em PORT.`
+          : `Erro no servidor: ${erro.message}`
+      );
+      process.exit(1);
+    });
     servidor.listen(PORTA, HOST, () => {
       const ipLocal = obterIpLocal();
       const protocolo = 'https';
@@ -886,4 +1083,9 @@ inicializarBanco()
         console.log(`SOS Car rodando em ${protocolo}://localhost:${PORTA} (host ${HOST})`);
       }
     });
+  })
+  .catch((erro) => {
+    // Ex.: só uma das variáveis TLS_* definida, ou arquivo de certificado ausente.
+    console.error('Não foi possível iniciar o servidor:', erro.message);
+    process.exit(1);
   });

@@ -39,6 +39,26 @@ function encerrarSessao(token) {
   sessoes.delete(token);
 }
 
+// Derruba todas as sessões de um usuário (menos, opcionalmente, a atual).
+// Usado quando a senha muda: quem tivesse o token antigo — por exemplo, um
+// invasor que descobriu a senha — perde o acesso na hora.
+function encerrarSessoesDoUsuario(tipo, id, tokenPreservado = null) {
+  for (const [token, sessao] of sessoes) {
+    if (sessao.tipo === tipo && sessao.id === id && token !== tokenPreservado) sessoes.delete(token);
+  }
+}
+
+// Sessões expiradas só saem do Map quando o mesmo token é usado de novo
+// (ver "autenticar"). Sem esta limpeza periódica, tokens abandonados
+// ficariam na memória para sempre. ".unref()" evita que o timer impeça o
+// processo de encerrar.
+setInterval(() => {
+  const agora = Date.now();
+  for (const [token, sessao] of sessoes) {
+    if (sessao.expiraEm <= agora) sessoes.delete(token);
+  }
+}, 10 * 60 * 1000).unref();
+
 // Middleware de autenticação: uma função que "embrulha" uma rota do
 // Express e roda ANTES dela. Recebe uma lista opcional de tipos
 // permitidos (ex.: ['prestador']) e devolve a função de middleware em si.
@@ -72,4 +92,4 @@ function autenticar(tiposPermitidos) {
   };
 }
 
-module.exports = { criarSessao, encerrarSessao, autenticar };
+module.exports = { criarSessao, encerrarSessao, encerrarSessoesDoUsuario, autenticar };

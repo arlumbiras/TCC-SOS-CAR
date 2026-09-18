@@ -27,7 +27,12 @@ const db = {
 };
 
 let pool;
+// true = MySQL indisponível na inicialização; tudo fica só em memória. Não
+// volta a false sozinho de propósito: gravar o estado em memória (vazio) por
+// cima de um banco que não conseguimos ler apagaria os dados reais.
 let modoFallback = false;
+// Mensagem do último erro ao gravar no MySQL (null = última gravação ok).
+let ultimaFalhaPersistencia = null;
 
 function paraDataHoraMysql(valor) {
   if (!valor) return null;
@@ -88,9 +93,22 @@ async function criarBancoSeNecessario() {
 }
 
 async function garantirEstrutura() {
-  await criarBancoSeNecessario();
+  try {
+    await criarBancoSeNecessario();
+  } catch (erro) {
+    // Em hospedagem compartilhada (ex.: Hostinger) o banco já vem criado pelo
+    // painel e o usuário não tem permissão de CREATE DATABASE — o erro é
+    // esperado e não impede o uso. Se o banco realmente não existir ou o
+    // servidor estiver inacessível, a conexão logo abaixo falha com a
+    // mensagem certa.
+    console.warn(`Não foi possível criar/verificar o banco "${DB_CONFIG.database}" (seguindo com o banco existente):`, erro.message);
+  }
   const conn = await obterPool();
 
+  // A ordem importa: cada tabela só pode referenciar (FOREIGN KEY) uma que já
+  // foi criada. Bancos que já existiam antes das chaves estrangeiras recebem
+  // as mesmas regras por migrations/001_integridade.sql — o IF NOT EXISTS
+  // abaixo não altera tabelas antigas.
   const consultas = [
     `CREATE TABLE IF NOT EXISTS categorias (
       id INT PRIMARY KEY,
@@ -116,7 +134,8 @@ async function garantirEstrutura() {
       disponivel BOOLEAN NOT NULL DEFAULT FALSE,
       latitude DOUBLE NULL,
       longitude DOUBLE NULL,
-      data_cadastro DATETIME NOT NULL
+      data_cadastro DATETIME NOT NULL,
+      CONSTRAINT fk_prestadores_categoria FOREIGN KEY (categoria_id) REFERENCES categorias(id)
     )`,
     `CREATE TABLE IF NOT EXISTS chamados (
       id VARCHAR(36) PRIMARY KEY,
@@ -130,14 +149,20 @@ async function garantirEstrutura() {
       status VARCHAR(50) NOT NULL,
       data_abertura DATETIME NOT NULL,
       data_aceite DATETIME NULL,
-      data_conclusao DATETIME NULL
+      data_conclusao DATETIME NULL,
+      CONSTRAINT fk_chamados_cliente FOREIGN KEY (cliente_id) REFERENCES clientes(id),
+      CONSTRAINT fk_chamados_prestador FOREIGN KEY (prestador_id) REFERENCES prestadores(id),
+      CONSTRAINT fk_chamados_categoria FOREIGN KEY (categoria_id) REFERENCES categorias(id),
+      CONSTRAINT chk_chamados_status CHECK (status IN ('aberto','aceito','em_andamento','concluido','cancelado'))
     )`,
     `CREATE TABLE IF NOT EXISTS avaliacoes (
       id VARCHAR(36) PRIMARY KEY,
       chamado_id VARCHAR(36) NOT NULL UNIQUE,
       nota INT NOT NULL,
       comentario TEXT NULL,
-      data_avaliacao DATETIME NOT NULL
+      data_avaliacao DATETIME NOT NULL,
+      CONSTRAINT fk_avaliacoes_chamado FOREIGN KEY (chamado_id) REFERENCES chamados(id),
+      CONSTRAINT chk_avaliacoes_nota CHECK (nota BETWEEN 1 AND 5)
     )`,
     `CREATE TABLE IF NOT EXISTS redefinicoes_senha (
       token VARCHAR(64) PRIMARY KEY,
@@ -236,18 +261,21 @@ async function carregar() {
     const [prestadores] = await conn.query('SELECT * FROM prestadores ORDER BY data_cadastro');
     const [chamados] = await conn.query('SELECT * FROM chamados ORDER BY data_abertura');
     const [avaliacoes] = await conn.query('SELECT * FROM avaliacoes ORDER BY data_avaliacao');
-    // Tokens de redefinição já vencidos não precisam ser carregados — o
-    // próprio DELETE em salvar() os limpa na próxima escrita.
-    const [redefinicoes] = await conn.query('SELECT * FROM redefinicoes_senha WHERE expira_em > NOW()');
+    const [redefinicoes] = await conn.query('SELECT * FROM redefinicoes_senha');
 
     modoFallback = false;
+    const agora = new Date();
     Object.assign(db, {
       categorias,
       clientes: clientes.map(normalizarCliente),
       prestadores: prestadores.map(normalizarPrestador),
       chamados: chamados.map(normalizarChamado),
       avaliacoes: avaliacoes.map(normalizarAvaliacao),
-      redefinicoesSenha: redefinicoes.map(normalizarRedefinicao)
+      // Tokens vencidos são descartados aqui (e somem do banco na próxima
+      // gravação). O filtro é feito em JS, não com NOW() no SQL, porque o
+      // fuso horário do servidor MySQL pode ser diferente do fuso do Node,
+      // que é quem grava as datas.
+      redefinicoesSenha: redefinicoes.map(normalizarRedefinicao).filter((r) => new Date(r.expiraEm) > agora)
     });
 
     return db;
@@ -258,15 +286,18 @@ async function carregar() {
   }
 }
 
-async function salvar() {
-  if (modoFallback) {
-    return db;
-  }
-
+// Grava o estado inteiro de "db" no MySQL (DELETE + INSERT de tudo, dentro
+// de uma transação). Não lança erro: se falhar, registra o motivo e os dados
+// seguem em memória — como cada gravação é um retrato completo do estado, a
+// próxima que der certo já recupera tudo o que ficou para trás.
+async function gravarSnapshot() {
+  let conn;
   try {
-    const conn = await obterPool();
-
-    await conn.query('START TRANSACTION');
+    // A transação precisa ficar presa a UMA conexão. Com pool.query(), cada
+    // comando pode cair numa conexão diferente, e o START TRANSACTION /
+    // COMMIT não valeria para os demais.
+    conn = await (await obterPool()).getConnection();
+    await conn.beginTransaction();
 
     try {
       await conn.query('DELETE FROM redefinicoes_senha');
@@ -327,16 +358,58 @@ async function salvar() {
         }
       }
 
-      await conn.query('COMMIT');
-    } catch (error) {
-      await conn.query('ROLLBACK');
-      throw error;
+      await conn.commit();
+    } catch (erro) {
+      await conn.rollback().catch(() => {});
+      throw erro;
     }
+    ultimaFalhaPersistencia = null;
   } catch (erro) {
-    console.warn('Falha ao persistir no MySQL. Mantendo dados em memória apenas.', erro.message);
-    modoFallback = true;
-    return db;
+    ultimaFalhaPersistencia = erro.message;
+    console.error(
+      'Falha ao gravar no MySQL. Os dados seguem em memória e serão gravados de novo na próxima alteração:',
+      erro.message
+    );
+  } finally {
+    if (conn) conn.release();
   }
+  return db;
+}
+
+let gravacaoEmAndamento = null;
+let gravacaoPendente = null;
+
+// Ponto de entrada das rotas ("await salvar()"). Duas gravações ao mesmo
+// tempo — DELETE + INSERT de todas as tabelas em transações concorrentes —
+// podem se bloquear (deadlock) no MySQL. Por isso: no máximo uma roda por
+// vez, e todos os pedidos que chegam durante ela são agrupados numa única
+// gravação seguinte (que já enxerga todas as alterações feitas até ali).
+function salvar() {
+  if (modoFallback) return Promise.resolve(db);
+
+  if (!gravacaoEmAndamento) {
+    gravacaoEmAndamento = gravarSnapshot().finally(() => {
+      gravacaoEmAndamento = null;
+    });
+    return gravacaoEmAndamento;
+  }
+
+  if (!gravacaoPendente) {
+    gravacaoPendente = gravacaoEmAndamento.then(() => {
+      gravacaoPendente = null;
+      return salvar();
+    });
+  }
+  return gravacaoPendente;
+}
+
+// Estado do armazenamento, para o /health: "mysql" ou "memoria" (fallback),
+// e a mensagem do último erro de gravação (null se está tudo certo).
+function estadoPersistencia() {
+  return {
+    armazenamento: modoFallback ? 'memoria' : 'mysql',
+    ultimaFalha: ultimaFalhaPersistencia
+  };
 }
 
 async function inicializarBanco() {
@@ -353,4 +426,4 @@ async function testarConexao() {
   }
 }
 
-module.exports = { db, salvar, inicializarBanco, testarConexao };
+module.exports = { db, salvar, inicializarBanco, testarConexao, estadoPersistencia };

@@ -13,6 +13,19 @@
 // =================================================================
 const nodemailer = require('nodemailer');
 
+// O nome vem do cadastro (texto livre). No corpo HTML do e-mail ele precisa
+// ser escapado, senão quem se cadastra com um nome contendo tags consegue
+// injetar HTML/links na mensagem.
+function escaparHtml(texto) {
+  return String(texto ?? '').replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  }[c]));
+}
+
 function smtpConfigurado() {
   return Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
 }
@@ -51,7 +64,7 @@ async function enviarEmailRedefinicao({ paraEmail, nome, tipo, token }) {
       to: paraEmail,
       subject: 'SOS Car — Redefinição de senha',
       text: `Olá, ${nome}!\n\nRecebemos um pedido para redefinir sua senha no SOS Car. Acesse o link abaixo (válido por 1 hora) para escolher uma nova senha:\n\n${link}\n\nSe você não pediu isso, apenas ignore este e-mail.`,
-      html: `<p>Olá, ${nome}!</p><p>Recebemos um pedido para redefinir sua senha no SOS Car. Acesse o link abaixo (válido por 1 hora) para escolher uma nova senha:</p><p><a href="${link}">${link}</a></p><p>Se você não pediu isso, apenas ignore este e-mail.</p>`
+      html: `<p>Olá, ${escaparHtml(nome)}!</p><p>Recebemos um pedido para redefinir sua senha no SOS Car. Acesse o link abaixo (válido por 1 hora) para escolher uma nova senha:</p><p><a href="${escaparHtml(link)}">${escaparHtml(link)}</a></p><p>Se você não pediu isso, apenas ignore este e-mail.</p>`
     });
   } catch (erro) {
     console.warn(

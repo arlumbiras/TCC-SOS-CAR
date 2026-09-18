@@ -12,6 +12,24 @@
   const iconeLua = botao.querySelector('.icone-lua');
   const iconeSol = botao.querySelector('.icone-sol');
 
+  // localStorage pode lançar erro (modo privado, dados de site bloqueados).
+  // Sem o try/catch, este script inteiro quebrava e o botão de tema ficava
+  // sem função.
+  function lerTemaSalvo() {
+    try {
+      return localStorage.getItem(CHAVE);
+    } catch {
+      return null;
+    }
+  }
+  function guardarTema(tema) {
+    try {
+      localStorage.setItem(CHAVE, tema);
+    } catch {
+      // Sem armazenamento: o tema vale só até recarregar a página.
+    }
+  }
+
   // Aplica um tema: atualiza o atributo em <html>, troca o ícone do
   // botão (lua = "clique para escurecer", sol = "clique para clarear")
   // e lembra a escolha para a próxima visita.
@@ -19,13 +37,13 @@
     document.documentElement.setAttribute('data-tema', tema);
     iconeLua.classList.toggle('oculto', tema === 'escuro');
     iconeSol.classList.toggle('oculto', tema !== 'escuro');
-    localStorage.setItem(CHAVE, tema);
+    guardarTema(tema);
   }
 
   // Ao carregar a página: usa o tema que o usuário já escolheu antes
   // (se houver) ou, na primeira visita, respeita a preferência do
   // sistema operacional (prefers-color-scheme).
-  const salvo = localStorage.getItem(CHAVE);
+  const salvo = lerTemaSalvo();
   const preferidoPeloSistema = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'escuro' : 'claro';
   aplicar(salvo || preferidoPeloSistema);
 

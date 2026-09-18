@@ -17,7 +17,7 @@
   <meta name="theme-color" content="#181818" />
   <meta name="description" content="SOS Car — peça socorro automotivo perto de você ou atenda quem precisa, com acompanhamento do chamado em tempo real." />
   <title>SOS Car — Socorro automotivo</title>
-  <link rel="icon" type="image/svg+xml" href="img/logo.png" />
+  <link rel="icon" type="image/svg+xml" href="img/logo.svg" />
   <link rel="manifest" href="manifest.json" />
   <link rel="apple-touch-icon" href="img/logo.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -76,7 +76,7 @@
               <span class="destaque-icone" aria-hidden="true">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.5-3 8-7 9-4-1-7-4.5-7-9V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg>
               </span>
-              <span>Prestadores por categoria: mecânico, borracheiro e auto elétrica</span>
+              <span>Prestadores por categoria: mecânico, borracheiro, auto elétrica e guincho</span>
             </li>
             <li class="destaque">
               <span class="destaque-icone" aria-hidden="true">
@@ -234,7 +234,7 @@
         <ol class="progresso" id="progresso-chamado">
           <li data-status="aberto">Aberto</li>
           <li data-status="aceito">Aceito</li>
-          <li data-status="em_andamento">A caminho</li>
+          <li data-status="em_andamento">No local</li>
           <li data-status="concluido">Concluído</li>
         </ol>
         <dl class="detalhes" id="chamado-detalhes"></dl>
@@ -285,7 +285,7 @@
           <ul class="lista-chamados" id="lista-disponiveis"></ul>
           <p id="sem-chamados-msg" class="estado-vazio oculto">
             <svg class="estado-vazio-icone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16v6l-3 3H7l-3-3V4z"/><path d="M4 10v9a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-9"/></svg>
-            Nenhum chamado disponível no momento.
+            <span id="sem-chamados-texto">Nenhum chamado disponível no momento.</span>
           </p>
         </div>
       </div>
@@ -387,8 +387,8 @@
             <select id="admin-filtro-status" class="admin-filtro">
               <option value="">Todos os status</option>
               <option value="aberto">Aberto</option>
-              <option value="aceito">Aceito, a caminho </option>
-              <option value="em_andamento">Chegou</option>
+              <option value="aceito">Aceito (a caminho)</option>
+              <option value="em_andamento">No local</option>
               <option value="concluido">Concluído</option>
               <option value="cancelado">Cancelado</option>
             </select>

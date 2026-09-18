@@ -32,10 +32,17 @@ const Mapa = (function () {
 
   function normalizarCategoria(chave) {
     if (!chave) return 'padrao';
-    const texto = String(chave).trim().toLowerCase();
+    // Remove os acentos antes de comparar: "Mecânico" em minúsculas é
+    // "mecânico", que NÃO contém "mecan" — sem isto o ícone do mecânico
+    // nunca aparecia (caía no marcador padrão).
+    const texto = String(chave)
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '');
     if (texto.includes('mecan')) return 'mecanico';
     if (texto.includes('borrache')) return 'borracheiro';
-    if (texto.includes('eletrica') || texto.includes('elétrica')) return 'auto-eletrica';
+    if (texto.includes('eletrica')) return 'auto-eletrica';
     if (texto.includes('guin')) return 'guincho';
     return 'padrao';
   }
@@ -104,9 +111,14 @@ const Mapa = (function () {
     }
   }
 
+  // Tira a rota do mapa e invalida qualquer consulta de rota ainda em
+  // andamento (a resposta atrasada não deve reaparecer depois).
   function removerRota(elementoId) {
     const instancia = instancias[elementoId];
-    if (!instancia?.rota) return;
+    if (!instancia) return;
+    instancia.rotaSequencia += 1;
+    instancia.rotaChave = null;
+    if (!instancia.rota) return;
     instancia.mapa.removeLayer(instancia.rota);
     instancia.rota = null;
   }
@@ -115,7 +127,16 @@ const Mapa = (function () {
     const instancia = instancias[elementoId];
     if (!instancia || !origem || !destino) return;
 
-    removerRota(elementoId);
+    // Os painéis chamam esta função a cada atualização (3–6 s). A rota só é
+    // refeita quando algum dos pontos se moveu mais de ~10 m (4 casas
+    // decimais). Antes, cada tique consultava o servidor público de rotas
+    // (OSRM, que limita o uso) e recriava a linha, fazendo o balão piscar.
+    const chave = [...origem, ...destino].map((v) => v.toFixed(4)).join(',');
+    if (instancia.rotaChave === chave) return;
+    instancia.rotaChave = chave;
+    // Se uma consulta antiga responder depois de uma mais nova, ela é
+    // descartada — senão sobrava uma linha "fantasma" que nunca saía do mapa.
+    const sequencia = (instancia.rotaSequencia += 1);
 
     const origemLngLat = [origem[1], origem[0]];
     const destinoLngLat = [destino[1], destino[0]];
@@ -123,6 +144,13 @@ const Mapa = (function () {
     const tempoEstimado = Math.max(1, (distanciaKm / 32) * 60);
 
     const montarLinha = (pontos, popupHtml) => {
+      if (instancia.rotaSequencia !== sequencia) return;
+      // A linha nova só entra quando está pronta (a antiga fica até lá), e o
+      // balão abre na primeira rota ou se o usuário o mantinha aberto.
+      const anterior = instancia.rota;
+      const abrirBalao = !anterior || anterior.isPopupOpen();
+      if (anterior) instancia.mapa.removeLayer(anterior);
+
       const linha = L.polyline(pontos, {
         color: '#4f46e5',
         weight: 5,
@@ -130,7 +158,7 @@ const Mapa = (function () {
         dashArray: '8 10'
       }).addTo(instancia.mapa);
       linha.bindPopup(popupHtml, { autoClose: false, closeButton: true });
-      linha.openPopup();
+      if (abrirBalao) linha.openPopup();
       instancia.rota = linha;
     };
 
@@ -175,7 +203,14 @@ const Mapa = (function () {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>'
     }).addTo(mapa);
 
-    instancias[elementoId] = { mapa, marcadores: {}, rota: null, usuarioMoveu: false };
+    instancias[elementoId] = {
+      mapa,
+      marcadores: {},
+      rota: null,
+      rotaChave: null, // pontos da última rota pedida (evita refazê-la sem necessidade)
+      rotaSequencia: 0, // numera as consultas de rota para descartar respostas atrasadas
+      usuarioMoveu: false
+    };
     mapa.on('dragstart', () => {
       instancias[elementoId].usuarioMoveu = true;
     });
@@ -228,6 +263,9 @@ const Mapa = (function () {
     if (!marcador) return;
     instancia.mapa.removeLayer(marcador);
     delete instancia.marcadores.prestador;
+    // Sem prestador não há rota: antes a linha ficava no mapa depois de o
+    // prestador cancelar ou de o chamado terminar.
+    removerRota(elementoId);
     atualizarViewportSeNecessario(elementoId);
   }
 

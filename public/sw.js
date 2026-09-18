@@ -10,7 +10,9 @@
 // (ex.: acessando pelo IP da rede local) o navegador registra o service
 // worker, mas não oferece a opção de instalar.
 // =================================================================
-const CACHE = 'sos-car-v1';
+// A versão sobe quando a estratégia de cache muda: o "activate" abaixo apaga
+// os caches de versões antigas (a v1 acumulou tiles de mapa sem limite).
+const CACHE = 'sos-car-v2';
 const ARQUIVOS_ESSENCIAIS = [
   '/',
   '/css/style.css',
@@ -36,17 +38,36 @@ self.addEventListener('activate', (evento) => {
 });
 
 self.addEventListener('fetch', (evento) => {
-  // Chamadas à API nunca devem ser respondidas pelo cache — precisam
-  // sempre ser dados atuais (ou falhar de verdade, para o app tratar).
-  if (evento.request.url.includes('/api/')) return;
+  const { request } = evento;
+  const url = new URL(request.url);
+
+  // Só os arquivos do próprio app (GET, mesma origem) passam pelo cache.
+  // Ficam de fora:
+  //  - a API e o /health: precisam ser sempre dados atuais (ou falhar de
+  //    verdade, para o app tratar);
+  //  - o que vem de outros domínios (tiles do OpenStreetMap, Leaflet, fontes,
+  //    servidor de rotas): guardá-los enchia o cache do celular sem limite a
+  //    cada trecho de mapa visto.
+  if (
+    request.method !== 'GET' ||
+    url.origin !== self.location.origin ||
+    url.pathname.startsWith('/api/') ||
+    url.pathname === '/health'
+  ) {
+    return;
+  }
 
   evento.respondWith(
-    fetch(evento.request)
+    fetch(request)
       .then((resposta) => {
-        const copia = resposta.clone();
-        caches.open(CACHE).then((cache) => cache.put(evento.request, copia));
+        // Erros (404/500) não vão para o cache, senão seriam servidos de
+        // volta como se fossem a página de verdade quando estiver offline.
+        if (resposta.ok) {
+          const copia = resposta.clone();
+          caches.open(CACHE).then((cache) => cache.put(request, copia));
+        }
         return resposta;
       })
-      .catch(() => caches.match(evento.request))
+      .catch(() => caches.match(request))
   );
 });

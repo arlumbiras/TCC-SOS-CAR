@@ -1,3 +1,6 @@
 .env
 node_modules/
 .certs/
+# Anotacoes com credenciais e backups (o zip antigo contem um .env dentro)
+banco.txt
+*.zip

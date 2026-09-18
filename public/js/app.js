@@ -79,14 +79,46 @@
     }
   }
 
+  // Roda "atualizar" agora e depois a cada "intervaloMs" (o polling que
+  // mantém os painéis em dia). Diferente de um setInterval solto:
+  //  - não empilha requisições: se a anterior ainda não terminou (rede
+  //    lenta), o tique é pulado;
+  //  - erros não viram "unhandled rejection": avisa com um toast na
+  //    primeira falha e fica quieto até a conexão voltar, em vez de
+  //    repetir o aviso a cada 3 segundos.
+  function iniciarAtualizacaoAutomatica(atualizar, intervaloMs) {
+    let emAndamento = false;
+    let avisouFalha = false;
+    const tique = async () => {
+      if (emAndamento) return;
+      emAndamento = true;
+      try {
+        await atualizar();
+        avisouFalha = false;
+      } catch (err) {
+        // Sessão expirada: o evento "sessao-expirada" já cuidou de tudo.
+        if (usuarioTipoAtual && !avisouFalha) {
+          avisouFalha = true;
+          toast(err.message);
+        }
+      } finally {
+        emAndamento = false;
+      }
+    };
+    tique();
+    intervaloAtualizacao = setInterval(tique, intervaloMs);
+  }
+
   // Traduz o status técnico (igual ao salvo no banco) para um texto
   // amigável de mostrar na tela.
   function rotuloStatus(status) {
     return (
       {
         aberto: 'Aberto',
-        aceito: 'Aceito',
-        em_andamento: 'A caminho',
+        aceito: 'Aceito (a caminho)',
+        // O prestador chega ao local e toca em "Cheguei ao local" — é esse
+        // clique que leva o chamado a "em_andamento".
+        em_andamento: 'No local',
         concluido: 'Concluído',
         cancelado: 'Cancelado'
       }[status] || status
@@ -229,7 +261,7 @@
   // deixamos pronto).
   async function carregarCategorias() {
     const categorias = await API.categorias();
-    const opcoesHtml = categorias.map((c) => `<option value="${c.id}">${c.nome}</option>`).join('');
+    const opcoesHtml = categorias.map((c) => `<option value="${c.id}">${escaparHtml(c.nome)}</option>`).join('');
     const seletores = [
       document.querySelector('#form-cadastro select[name="categoriaId"]'),
       document.getElementById('chamado-categoria')
@@ -335,7 +367,7 @@
   // apaga o token local e volta para a tela de login. Funciona para
   // cliente, prestador OU admin — o backend só olha o token, não o tipo.
   btnSair.addEventListener('click', async () => {
-    pararAtualizacaoAutomatica();
+    encerrarSessaoLocal();
     try {
       await API.logout();
     } catch {
@@ -343,9 +375,42 @@
       // seguimos limpando o token local e voltando para o login.
     }
     API.definirToken(null);
+    mostrarTela('auth');
+  });
+
+  // Zera tudo o que a interface guardava de quem estava logado: para o
+  // polling e o GPS, esquece o usuário e limpa as listas da tela (para a
+  // próxima pessoa que entrar neste navegador não ver, nem por um instante,
+  // o histórico da anterior). Usada no "Sair" e quando a sessão expira.
+  function encerrarSessaoLocal() {
+    pararAtualizacaoAutomatica();
     usuarioTipoAtual = null;
     ultimoUsuario = null;
+    chamadoEmFoco = null;
+    [
+      clienteHistoricoEl,
+      prestadorHistoricoEl,
+      listaDisponiveisEl,
+      prestadorListaAvaliacoesEl,
+      detalhesEl,
+      prestadorChamadoDetalhesEl
+    ].forEach((el) => {
+      el.innerHTML = '';
+    });
+    // O painel admin esconde o formulário de login ao entrar; sem restaurar,
+    // o próximo "Acesso administrativo" abriria o painel vazio, sem pedir senha.
+    adminLoginEl.classList.remove('oculta');
+    adminPainelEl.classList.add('oculta');
+  }
+
+  // api.js dispara este evento quando o servidor recusa o token (sessão de
+  // 24 h vencida ou servidor reiniciado). Levamos o usuário ao login em vez
+  // de deixar o painel falhando em silêncio a cada atualização.
+  window.addEventListener('sessao-expirada', () => {
+    if (!usuarioTipoAtual) return; // não estava logado: nada a fazer
+    encerrarSessaoLocal();
     mostrarTela('auth');
+    toast('Sua sessão expirou. Faça login novamente.');
   });
 
   // Botão de Configurações: abre a tela de config preenchida com os dados do usuário
@@ -510,11 +575,10 @@
     montarEstrelas();
     pararAtualizacaoAutomatica();
     iniciarRastreamentoCliente();
-    atualizarPainelCliente();
-    // A cada 3 segundos, busca de novo o chamado atual e o histórico —
+    // Busca agora e depois a cada 3 segundos o chamado atual e o histórico —
     // é assim que a tela do cliente "percebe" quando um prestador aceita
     // o chamado, sem precisar de WebSockets.
-    intervaloAtualizacao = setInterval(atualizarPainelCliente, 3000);
+    iniciarAtualizacaoAutomatica(atualizarPainelCliente, 3000);
   }
 
   // Mantém a posição do cliente atualizada para que o prestador veja seu
@@ -766,6 +830,7 @@
   const prestadorComChamadoEl = document.getElementById('prestador-com-chamado'); // atendimento em andamento
   const listaDisponiveisEl = document.getElementById('lista-disponiveis');
   const semChamadosMsg = document.getElementById('sem-chamados-msg');
+  const semChamadosTexto = document.getElementById('sem-chamados-texto');
   const prestadorChamadoDetalhesEl = document.getElementById('prestador-chamado-detalhes');
   const btnIniciar = document.getElementById('btn-iniciar');
   const btnConcluir = document.getElementById('btn-concluir');
@@ -787,11 +852,10 @@
     mostrarTela('prestador');
     pararAtualizacaoAutomatica();
     obterLocalizacaoPrestador();
-    atualizarPainelPrestador();
     // Mesma ideia do painel do cliente: sem WebSockets, a lista de
     // chamados disponíveis (ou o andamento do chamado aceito) é
     // atualizada perguntando de novo à API a cada 6 segundos.
-    intervaloAtualizacao = setInterval(atualizarPainelPrestador, 6000);
+    iniciarAtualizacaoAutomatica(atualizarPainelPrestador, 6000);
   }
 
   // Pede a localização GPS do prestador assim que o painel abre, e já
@@ -829,10 +893,16 @@
     disponivelTexto.textContent = chkDisponivel.checked ? 'Disponível' : 'Indisponível';
     try {
       await API.atualizarDisponibilidade({ disponivel: chkDisponivel.checked, ...(localizacaoPrestador || {}) });
-      await atualizarPainelPrestador();
     } catch (err) {
+      // Não salvou no servidor: desfaz o interruptor para a tela não
+      // mostrar "Disponível" enquanto o servidor ainda diz "Indisponível".
+      chkDisponivel.checked = !chkDisponivel.checked;
+      disponivelTexto.textContent = chkDisponivel.checked ? 'Disponível' : 'Indisponível';
       toast(err.message, 'erro');
+      return;
     }
+    // Já mostra a lista de chamados (ou o aviso de indisponível) sem esperar o próximo ciclo.
+    atualizarPainelPrestador().catch(() => {});
   });
 
   // Delegação de evento: em vez de um listener por botão "Aceitar" (que
@@ -850,7 +920,7 @@
       // a mensagem já vem pronta da API.
       toast(err.message, 'erro');
     }
-    await atualizarPainelPrestador(); // atualiza a lista de qualquer forma (com ou sem sucesso)
+    await atualizarPainelPrestador().catch(() => {}); // atualiza a lista de qualquer forma (com ou sem sucesso)
   });
 
   btnIniciar.addEventListener('click', async () => {
@@ -929,6 +999,11 @@
   // pelo listener de delegação configurado acima.
   function renderizarDisponiveis(lista) {
     semChamadosMsg.classList.toggle('oculto', lista.length > 0);
+    // Com o interruptor desligado o servidor não devolve chamados; sem esta
+    // explicação, "Nenhum chamado disponível" pareceria falta de demanda.
+    semChamadosTexto.textContent = chkDisponivel.checked
+      ? 'Nenhum chamado disponível no momento.'
+      : 'Você está indisponível. Ative a opção "Disponível" para receber chamados.';
     listaDisponiveisEl.innerHTML = lista
       .map(
         (c) => `
@@ -1049,9 +1124,8 @@
     adminLoginEl.classList.add('oculta');
     adminPainelEl.classList.remove('oculta');
     mostrarTela('admin');
-    atualizarPainelAdmin();
     pararAtualizacaoAutomatica();
-    intervaloAtualizacao = setInterval(atualizarPainelAdmin, 8000);
+    iniciarAtualizacaoAutomatica(atualizarPainelAdmin, 8000);
   }
 
   async function atualizarPainelAdmin() {
@@ -1069,7 +1143,9 @@
       0
     );
 
-    renderizarCategoriasAdmin(categorias);
+    // Não redesenha a lista enquanto o admin está digitando um novo nome —
+    // a cada 8 s isso apagaria o que ele acabou de escrever.
+    if (!adminListaCategorias.querySelector('.categoria-input')) renderizarCategoriasAdmin(categorias);
     renderizarUsuariosAdmin(usuarios);
     await renderizarChamadosAdmin();
   }

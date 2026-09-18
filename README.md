@@ -13,10 +13,22 @@ npm install
 npm start
 ```
 
-Por padrão a API se conecta a um banco MySQL remoto já configurado em
-`server/db.js`. Se a conexão com o MySQL falhar por qualquer motivo, o
-servidor sobe mesmo assim, guardando os dados apenas em memória (modo
-fallback) — ou seja, eles se perdem ao reiniciar.
+A conexão com o banco MySQL é configurada no arquivo `.env` (na raiz do
+projeto; se ele não existir, copie `.env.example` para `.env`). Preencha
+`DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER` e `DB_PASSWORD` com os dados do seu
+banco. As credenciais **nunca** ficam no código, e o `.env` não deve ir para o
+GitHub (já está no `.gitignore`).
+
+Bancos criados antes das chaves estrangeiras (2026-09) precisam aplicar uma vez
+`migrations/001_integridade.sql` (com o servidor parado e um backup feito);
+bancos novos já nascem com elas. Use uma instância do sistema por banco: cada
+uma regrava o banco inteiro a partir da própria memória.
+
+Se a conexão com o MySQL falhar na inicialização (host errado, senha errada, IP
+não autorizado em "MySQL remoto"…), o servidor sobe mesmo assim, guardando os
+dados apenas em memória (modo fallback) — eles se perdem ao reiniciar. O
+motivo aparece no terminal, e `GET /health` mostra se o armazenamento atual é
+`mysql` ou `memoria`.
 
 Depois abra `https://localhost:3000` no navegador. O servidor gera
 automaticamente um certificado local de desenvolvimento na primeira execução.
@@ -65,14 +77,17 @@ com credenciais padrão, link de redefinição de senha só no console).
 
 1. Na tela inicial, escolha **"Sou cliente"** ou **"Sou prestador"** e crie
    uma conta (aba "Criar conta"). Prestadores também escolhem uma categoria
-   (Mecânico, Borracheiro ou Auto Elétrica).
+   (Mecânico, Borracheiro, Auto Elétrica ou Guincho).
 2. **Como cliente:** preencha o endereço, clique em "Usar minha localização"
    (o navegador vai pedir permissão de GPS) e solicite o socorro. Acompanhe
    o status do chamado (com mapa) na mesma tela.
-3. **Como prestador:** ative o interruptor "Disponível", permita o acesso à
+3. **Como prestador:** ative o interruptor "Disponível" (com ele desligado,
+   nenhum chamado aparece nem pode ser aceito), permita o acesso à
    localização e aguarde os chamados aparecerem na lista. Clique em
    "Aceitar" — se dois prestadores tentarem aceitar o mesmo chamado, só o
-   primeiro consegue (essa é a regra central do TCC).
+   primeiro consegue (essa é a regra central do TCC). Cada prestador atende um
+   chamado por vez: é preciso concluir ou cancelar o atual antes de aceitar
+   outro.
 4. Depois de aceitar, o prestador marca "Cheguei ao local" e depois
    "Concluir atendimento". O cliente pode então avaliar o atendimento — a
    nota passa a aparecer no perfil público do prestador. O comentário da
@@ -94,8 +109,12 @@ para simular o fluxo completo sozinho.
 
 - **Banco de dados relacional (MySQL)** (`server/db.js`): a API se conecta a
   um banco MySQL cuja estrutura é criada automaticamente na primeira
-  execução (mesmo desenho de tabelas do script `sos_veiculos_mysql.sql`, na
-  raiz do projeto). Se o MySQL estiver indisponível, o servidor usa um
+  execução, com as mesmas entidades do modelo descrito em
+  `sos_veiculos_mysql.sql` (na raiz do projeto). Atenção: o script SQL é o
+  modelo conceitual e **não precisa ser executado** — as tabelas que a API
+  cria usam nomes no plural (`clientes`, `prestadores`, `chamados`…) e
+  identificadores UUID em texto, então diferem em detalhes do script. Se o
+  MySQL estiver indisponível, o servidor usa um
   modo de fallback em memória só para não travar a demonstração — nesse
   modo os dados não são persistidos entre reinicializações.
 - **Sessão simples por token em memória** (`server/auth-middleware.js`):
@@ -103,8 +122,9 @@ para simular o fluxo completo sozinho.
   navegador guarda esse token e o envia em cada requisição. Não usa JWT
   nem grava sessão em disco, mantendo o código simples de explicar — o
   efeito colateral é que todos precisam logar de novo se o servidor for
-  reiniciado. As sessões expiram após 24 horas. A conta de administrador usa
-  exatamente o mesmo mecanismo e compara a senha com bcrypt.
+  reiniciado. As sessões expiram após 24 horas, e trocar ou redefinir a senha
+  derruba as demais sessões da conta. A conta de administrador usa exatamente o
+  mesmo mecanismo e compara a senha com bcrypt.
 - **Regra "primeiro que aceita, pega"**: implementada em
   `POST /api/chamados/:id/aceitar` (`server/server.js`). O handler é
   síncrono — não há `await` entre checar se o chamado ainda está livre e
@@ -156,9 +176,11 @@ public/                  frontend estático
   js/mapa.js             mini-mapa (Leaflet + OpenStreetMap)
   js/app.js              lógica das telas
 sos_veiculos_mysql.sql   estrutura das tabelas (DDL) do banco MySQL
-.env.example             lista comentada de todas as variáveis de ambiente
+migrations/              alterações no banco para quem já tem dados (001: chaves estrangeiras)
+.env.example             modelo do .env, com todas as variáveis de ambiente comentadas
+.env                     sua configuração local (banco, admin, e-mail) — não vai para o GitHub
 ```
 
 Para reiniciar os dados do zero, apague e recrie o banco (`DROP DATABASE` +
-rodar o servidor de novo, que recria a estrutura e as 3 categorias
+rodar o servidor de novo, que recria a estrutura e as 4 categorias
 automaticamente), ou apague as linhas das tabelas diretamente no MySQL.

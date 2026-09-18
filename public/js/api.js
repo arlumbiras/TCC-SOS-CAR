@@ -19,12 +19,23 @@ const API = (function () {
   // localStorage mantém os dados salvos mesmo depois de fechar a aba/
   // navegador — é assim que o usuário continua logado ao recarregar a
   // página (ver também app.js, função iniciar()).
+  // O acesso ao localStorage é protegido por try/catch porque alguns
+  // navegadores (modo privado, cookies/dados de site bloqueados) lançam
+  // erro ao usá-lo — sem isso, o app inteiro deixaria de carregar.
   function obterToken() {
-    return localStorage.getItem(CHAVE_TOKEN);
+    try {
+      return localStorage.getItem(CHAVE_TOKEN);
+    } catch {
+      return null;
+    }
   }
   function definirToken(token) {
-    if (token) localStorage.setItem(CHAVE_TOKEN, token);
-    else localStorage.removeItem(CHAVE_TOKEN); // usado no logout
+    try {
+      if (token) localStorage.setItem(CHAVE_TOKEN, token);
+      else localStorage.removeItem(CHAVE_TOKEN); // usado no logout
+    } catch {
+      // Sem armazenamento disponível: a sessão só vale até fechar a aba.
+    }
   }
 
   // Função central: monta e envia a requisição HTTP, sempre anexando o
@@ -36,7 +47,14 @@ const API = (function () {
     const cabecalhos = { 'Content-Type': 'application/json', ...(opcoes.headers || {}) };
     if (token) cabecalhos.Authorization = `Bearer ${token}`;
 
-    const resposta = await fetch(BASE + caminho, { ...opcoes, headers: cabecalhos });
+    let resposta;
+    try {
+      resposta = await fetch(BASE + caminho, { ...opcoes, headers: cabecalhos });
+    } catch {
+      // fetch só rejeita quando não chegou ao servidor (sem internet,
+      // servidor fora do ar). Sem isto o usuário veria "Failed to fetch".
+      throw new Error('Sem conexão com o servidor. Verifique sua internet e tente novamente.');
+    }
 
     // Respostas 204 ("sem conteúdo", ex.: logout) não têm corpo JSON
     // para ler; nas demais, tentamos ler o JSON e, se falhar, seguimos
@@ -44,6 +62,13 @@ const API = (function () {
     const corpo = resposta.status === 204 ? null : await resposta.json().catch(() => null);
 
     if (!resposta.ok) {
+      // Token enviado e recusado (401): a sessão acabou — servidor
+      // reiniciado ou 24 h passadas. Avisamos o app.js, que leva o usuário
+      // de volta ao login em vez de deixar o painel falhando em silêncio.
+      if (resposta.status === 401 && token) {
+        definirToken(null);
+        window.dispatchEvent(new CustomEvent('sessao-expirada'));
+      }
       // O backend sempre manda { erro: "mensagem" } quando dá algo
       // errado (ver server.js) — usamos essa mensagem pronta para
       // mostrar direto na tela.
@@ -84,8 +109,7 @@ const API = (function () {
     chamadosDisponiveis: () => requisitar('/chamados/disponiveis'),
     aceitarChamado: (id) => requisitar(`/chamados/${id}/aceitar`, { method: 'POST' }),
     iniciarAtendimento: (id) => requisitar(`/chamados/${id}/iniciar`, { method: 'POST' }),
-    concluirAtendimento: (id) => requisitar(`/chamados/${id}/concluir`, { method: 'POST' })
-    ,
+    concluirAtendimento: (id) => requisitar(`/chamados/${id}/concluir`, { method: 'POST' }),
     cancelarPorPrestador: (id) => requisitar(`/chamados/${id}/cancelar-prestador`, { method: 'POST' }),
     atualizarUsuario: (dados) => requisitar('/auth/atualizar', { method: 'PATCH', body: JSON.stringify(dados) }),
 
