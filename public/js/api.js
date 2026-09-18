@@ -117,6 +117,7 @@ const API = (function () {
 
     adminEstatisticas: () => requisitar('/admin/estatisticas'),
     adminUsuarios: () => requisitar('/admin/usuarios'),
+    adminAprovarPrestador: (id) => requisitar(`/admin/prestadores/${id}/aprovar`, { method: 'POST' }),
     adminChamados: (status) => requisitar('/admin/chamados' + (status ? `?status=${encodeURIComponent(status)}` : '')),
     adminCancelarChamado: (id) => requisitar(`/admin/chamados/${id}/cancelar`, { method: 'POST' }),
     adminCategorias: () => requisitar('/admin/categorias'),

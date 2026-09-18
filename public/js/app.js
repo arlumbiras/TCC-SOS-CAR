@@ -353,9 +353,16 @@
     const dados = Object.fromEntries(new FormData(formCadastro));
     await comCarregamento(formCadastro.querySelector('button[type="submit"]'), 'Criando conta...', async () => {
       try {
-        const { token, usuario } = await API.registrar({ tipo: perfilSelecionado, ...dados });
-        API.definirToken(token);
+        const resposta = await API.registrar({ tipo: perfilSelecionado, ...dados });
         formCadastro.reset();
+
+        if (perfilSelecionado === 'prestador' && resposta && resposta.mensagem) {
+          mostrarErro(resposta.mensagem);
+          return;
+        }
+
+        const { token, usuario } = resposta;
+        API.definirToken(token);
         entrarComoUsuario(perfilSelecionado, usuario);
       } catch (err) {
         mostrarErro(err.message);
@@ -1212,17 +1219,40 @@
     ];
     adminTabelaUsuarios.innerHTML = linhas.length
       ? linhas
-          .map(
-            (u) => `
+          .map((u) => {
+            const statusTexto = u.tipo === 'Prestador'
+              ? (u.aprovado === true ? 'Aprovado' : 'Pendente')
+              : 'Ativo';
+            const botaoAprovar = u.tipo === 'Prestador' && u.aprovado !== true
+              ? `<button type="button" class="botao-primario botao-pequeno" data-aprovar-prestador="${u.id}">Aprovar</button>`
+              : '';
+
+            return `
         <tr>
           <td>${escaparHtml(u.nome)}</td>
           <td>${escaparHtml(u.email)}</td>
           <td>${u.tipo}</td>
           <td>${escaparHtml(u.categoriaNome) || '—'}</td>
-        </tr>`
-          )
+          <td>${statusTexto}</td>
+          <td>${botaoAprovar}</td>
+        </tr>`;
+          })
           .join('')
-      : '<tr><td colspan="4" class="texto-auxiliar">Nenhum usuário cadastrado.</td></tr>';
+      : '<tr><td colspan="6" class="texto-auxiliar">Nenhum usuário cadastrado.</td></tr>';
+  }
+
+  if (adminTabelaUsuarios) {
+    adminTabelaUsuarios.addEventListener('click', async (e) => {
+      const botao = e.target.closest('[data-aprovar-prestador]');
+      if (!botao) return;
+      try {
+        await API.adminAprovarPrestador(botao.dataset.aprovarPrestador);
+        await atualizarPainelAdmin();
+        toast('Prestador aprovado com sucesso.', 'sucesso');
+      } catch (err) {
+        toast(err.message, 'erro');
+      }
+    });
   }
 
   async function renderizarChamadosAdmin() {

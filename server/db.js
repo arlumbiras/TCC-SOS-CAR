@@ -131,12 +131,14 @@ async function garantirEstrutura() {
       telefone VARCHAR(50) NULL,
       cpf VARCHAR(20) NOT NULL UNIQUE,
       categoria_id INT NOT NULL,
+      aprovado BOOLEAN NOT NULL DEFAULT FALSE,
       disponivel BOOLEAN NOT NULL DEFAULT FALSE,
       latitude DOUBLE NULL,
       longitude DOUBLE NULL,
       data_cadastro DATETIME NOT NULL,
       CONSTRAINT fk_prestadores_categoria FOREIGN KEY (categoria_id) REFERENCES categorias(id)
     )`,
+    `ALTER TABLE prestadores ADD COLUMN IF NOT EXISTS aprovado BOOLEAN NOT NULL DEFAULT FALSE`,
     `CREATE TABLE IF NOT EXISTS chamados (
       id VARCHAR(36) PRIMARY KEY,
       cliente_id VARCHAR(36) NOT NULL,
@@ -208,6 +210,7 @@ function normalizarPrestador(row) {
     telefone: row.telefone,
     cpf: row.cpf,
     categoriaId: row.categoria_id,
+    aprovado: row.aprovado === undefined ? true : !!row.aprovado,
     disponivel: !!row.disponivel,
     latitude: row.latitude,
     longitude: row.longitude,
@@ -325,8 +328,8 @@ async function gravarSnapshot() {
       if (Array.isArray(db.prestadores) && db.prestadores.length > 0) {
         for (const prestador of db.prestadores) {
           await conn.query(
-            'INSERT INTO prestadores (id, nome, email, senha_hash, telefone, cpf, categoria_id, disponivel, latitude, longitude, data_cadastro) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [prestador.id, prestador.nome, prestador.email, prestador.senhaHash, prestador.telefone, prestador.cpf, prestador.categoriaId, !!prestador.disponivel, prestador.latitude ?? null, prestador.longitude ?? null, paraDataHoraMysql(prestador.dataCadastro)]
+            'INSERT INTO prestadores (id, nome, email, senha_hash, telefone, cpf, categoria_id, aprovado, disponivel, latitude, longitude, data_cadastro) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [prestador.id, prestador.nome, prestador.email, prestador.senhaHash, prestador.telefone, prestador.cpf, prestador.categoriaId, prestador.aprovado !== undefined ? !!prestador.aprovado : true, !!prestador.disponivel, prestador.latitude ?? null, prestador.longitude ?? null, paraDataHoraMysql(prestador.dataCadastro)]
           );
         }
       }

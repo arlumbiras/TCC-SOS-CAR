@@ -268,6 +268,7 @@ app.post('/api/auth/registrar', limitarRequisicoes(60 * 1000, 10), assincrono(as
   // localização atual.
   if (tipo === 'prestador') {
     usuario.categoriaId = Number(categoriaId);
+    usuario.aprovado = false;
     usuario.disponivel = false;
     usuario.latitude = null;
     usuario.longitude = null;
@@ -275,6 +276,12 @@ app.post('/api/auth/registrar', limitarRequisicoes(60 * 1000, 10), assincrono(as
 
   colecao.push(usuario); // "INSERT" na tabela em memória
   await salvar();
+
+  if (tipo === 'prestador') {
+    return res.status(201).json({
+      mensagem: 'Cadastro enviado para aprovação do administrador. Você só conseguirá fazer login após a aprovação.'
+    });
+  }
 
   const token = criarSessao(tipo, usuario.id);
   // "paraPublico" remove a senhaHash antes de devolver o usuário — o
@@ -300,6 +307,10 @@ app.post('/api/auth/login', limitarRequisicoes(60 * 1000, 10), assincrono(async 
     // senha que errou, para não ajudar quem estiver tentando adivinhar
     // credenciais de outra pessoa.
     return res.status(401).json({ erro: 'Email ou senha incorretos.' });
+  }
+
+  if (tipo === 'prestador' && usuario.aprovado !== true) {
+    return res.status(403).json({ erro: 'Seu cadastro está pendente de aprovação do administrador.' });
   }
 
   const token = criarSessao(tipo, usuario.id);
@@ -826,6 +837,18 @@ app.get('/api/admin/usuarios', autenticar(['admin']), (req, res) => {
   });
 });
 
+app.post('/api/admin/prestadores/:id/aprovar', autenticar(['admin']), assincrono(async (req, res) => {
+  const prestador = db.prestadores.find((p) => p.id === req.params.id);
+  if (!prestador) return res.status(404).json({ erro: 'Prestador não encontrado.' });
+  if (prestador.aprovado === true) {
+    return res.status(409).json({ erro: 'Este prestador já está aprovado.' });
+  }
+
+  prestador.aprovado = true;
+  await salvar();
+  res.json(paraPublico('prestador', prestador));
+}));
+
 // Lista todos os chamados do sistema (qualquer status), com filtro
 // opcional por status via query string — usada na tabela de chamados do
 // painel admin.
@@ -891,6 +914,7 @@ function paraPublico(tipo, usuario) {
   const { senhaHash, ...resto } = usuario; // "..." copia tudo, menos o que foi desestruturado antes
   if (tipo === 'prestador') {
     resto.categoriaNome = db.categorias.find((c) => c.id === usuario.categoriaId)?.nome;
+    resto.aprovado = usuario.aprovado !== undefined ? Boolean(usuario.aprovado) : true;
   }
   return resto;
 }
