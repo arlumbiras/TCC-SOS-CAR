@@ -27,18 +27,50 @@ function escaparHtml(texto) {
 }
 
 function smtpConfigurado() {
-  return Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+  const provider = (process.env.SMTP_PROVIDER || 'gmail').toLowerCase();
+  const host = process.env.SMTP_HOST || (
+    provider === 'hotmail' ? process.env.SMTP_HOST_HOTMAIL : process.env.SMTP_HOST_GMAIL
+  );
+  const usuario = process.env.SMTP_USER || (
+    provider === 'hotmail' ? process.env.SMTP_USER_HOTMAIL : process.env.SMTP_USER_GMAIL
+  );
+  const senha = process.env.SMTP_PASS || (
+    provider === 'hotmail' ? process.env.SMTP_PASS_HOTMAIL : process.env.SMTP_PASS_GMAIL
+  );
+  return Boolean(host && usuario && senha);
+}
+
+function obterConfigSmtp() {
+  const provider = (process.env.SMTP_PROVIDER || 'gmail').toLowerCase();
+
+  if (provider === 'hotmail') {
+    return {
+      host: process.env.SMTP_HOST_HOTMAIL || process.env.SMTP_HOST || 'smtp.office365.com',
+      port: Number(process.env.SMTP_PORT_HOTMAIL || process.env.SMTP_PORT || 587),
+      secure: false,
+      auth: {
+        user: process.env.SMTP_USER_HOTMAIL || process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS_HOTMAIL || process.env.SMTP_PASS
+      }
+    };
+  }
+
+  return {
+    host: process.env.SMTP_HOST_GMAIL || process.env.SMTP_HOST || 'smtp.gmail.com',
+    port: Number(process.env.SMTP_PORT_GMAIL || process.env.SMTP_PORT || 587),
+    secure: false,
+    auth: {
+      user: process.env.SMTP_USER_GMAIL || process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS_GMAIL || process.env.SMTP_PASS
+    }
+  };
 }
 
 let transportador;
 function obterTransportador() {
   if (!transportador) {
-    transportador = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: Number(process.env.SMTP_PORT) || 587,
-      secure: Number(process.env.SMTP_PORT) === 465,
-      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
-    });
+    const config = obterConfigSmtp();
+    transportador = nodemailer.createTransport(config);
   }
   return transportador;
 }
