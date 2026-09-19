@@ -869,6 +869,11 @@ button:focus-visible {
   padding: 10px 12px;
   border-radius: 10px;
   font-size: 13.5px;
+  margin-bottom: 12px;
+}
+
+#tela-esqueci-senha .btn-voltar {
+  margin-top: 8px;
 }
 
 /* Utilitário genérico de "pilha vertical com espaçamento" — mesma

@@ -47,15 +47,15 @@ function obterTransportador() {
 // erro para quem chamou — a rota de "esqueci minha senha" sempre deve
 // responder com sucesso genérico, mesmo se o e-mail falhar (ver
 // server/server.js).
-async function enviarEmailRedefinicao({ paraEmail, nome, tipo, token }) {
-  const baseUrl = process.env.APP_URL || 'https://localhost:3000';
+async function enviarEmailRedefinicao({ paraEmail, nome, tipo, token, appUrl }) {
+  const baseUrl = appUrl || process.env.APP_URL || 'https://localhost:3000';
   const link = `${baseUrl}/?tipo=${encodeURIComponent(tipo)}&token=${encodeURIComponent(token)}`;
 
   if (!smtpConfigurado()) {
     console.warn(
       `[e-mail] SMTP não configurado (defina SMTP_HOST/SMTP_USER/SMTP_PASS). Link de redefinição de senha para ${paraEmail} (válido por 1 hora):\n  ${link}`
     );
-    return;
+    return { link, smtpConfigurado: false };
   }
 
   try {
@@ -66,11 +66,13 @@ async function enviarEmailRedefinicao({ paraEmail, nome, tipo, token }) {
       text: `Olá, ${nome}!\n\nRecebemos um pedido para redefinir sua senha no SOS Car. Acesse o link abaixo (válido por 1 hora) para escolher uma nova senha:\n\n${link}\n\nSe você não pediu isso, apenas ignore este e-mail.`,
       html: `<p>Olá, ${escaparHtml(nome)}!</p><p>Recebemos um pedido para redefinir sua senha no SOS Car. Acesse o link abaixo (válido por 1 hora) para escolher uma nova senha:</p><p><a href="${escaparHtml(link)}">${escaparHtml(link)}</a></p><p>Se você não pediu isso, apenas ignore este e-mail.</p>`
     });
+    return { link, smtpConfigurado: true };
   } catch (erro) {
     console.warn(
       `[e-mail] Falha ao enviar para ${paraEmail}. Link de redefinição (válido por 1 hora):\n  ${link}`,
       erro.message
     );
+    return { link, smtpConfigurado: false };
   }
 }
 

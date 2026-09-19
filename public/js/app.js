@@ -503,7 +503,6 @@
   if (btnEsqueciSenha) {
     btnEsqueciSenha.addEventListener('click', () => {
       formEsqueciSenha.reset();
-      formEsqueciSenha.elements.tipo.value = perfilSelecionado; // acompanha a aba ativa (cliente/prestador)
       formEsqueciSenha.classList.remove('oculto');
       esqueciSenhaSucesso.classList.add('oculto');
       mostrarTela('esqueciSenha');
@@ -517,7 +516,10 @@
       await comCarregamento(formEsqueciSenha.querySelector('button[type="submit"]'), 'Enviando...', async () => {
         try {
           const resposta = await API.esqueciSenha(dados);
-          esqueciSenhaSucesso.textContent = resposta.mensagem;
+          const linkHtml = resposta.link
+            ? `<br><a href="${encodeURI(resposta.link)}" target="_blank" rel="noopener">${escaparHtml(resposta.link)}</a>`
+            : '';
+          esqueciSenhaSucesso.innerHTML = `${escaparHtml(resposta.mensagem)}${linkHtml}`;
           esqueciSenhaSucesso.classList.remove('oculto');
           formEsqueciSenha.classList.add('oculto');
         } catch (err) {
@@ -532,9 +534,23 @@
       e.preventDefault();
       redefinirSenhaErro.classList.add('oculto');
       const dados = Object.fromEntries(new FormData(formRedefinirSenha));
+      const novaSenha = String(dados.novaSenha ?? '').trim();
+
+      if (!tokenRedefinicaoAtual) {
+        redefinirSenhaErro.textContent = 'Link de redefinição inválido ou ausente.';
+        redefinirSenhaErro.classList.remove('oculto');
+        return;
+      }
+
+      if (novaSenha.length < 4 || novaSenha.length > 72) {
+        redefinirSenhaErro.textContent = 'A nova senha deve ter entre 4 e 72 caracteres.';
+        redefinirSenhaErro.classList.remove('oculto');
+        return;
+      }
+
       await comCarregamento(formRedefinirSenha.querySelector('button[type="submit"]'), 'Redefinindo...', async () => {
         try {
-          await API.redefinirSenha({ token: tokenRedefinicaoAtual, novaSenha: dados.novaSenha });
+          await API.redefinirSenha({ token: tokenRedefinicaoAtual, novaSenha });
           // Limpa "?tipo=...&token=..." da URL para um F5 não reabrir esta tela.
           window.history.replaceState({}, '', window.location.pathname);
           formRedefinirSenha.reset();

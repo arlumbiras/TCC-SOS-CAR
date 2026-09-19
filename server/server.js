@@ -381,26 +381,49 @@ app.patch('/api/auth/atualizar', autenticar(['cliente', 'prestador']), assincron
 app.post('/api/auth/esqueci-senha', limitarRequisicoes(60 * 1000, 3), assincrono(async (req, res) => {
   const { tipo, email } = req.body;
   const emailNormalizado = typeof email === 'string' ? email.trim().toLowerCase() : '';
-  const colecao = tipo === 'cliente' ? db.clientes : tipo === 'prestador' ? db.prestadores : null;
-  const usuario = colecao && colecao.find((u) => u.email.toLowerCase() === emailNormalizado);
+
+  const colecao =
+    tipo === 'cliente'
+      ? db.clientes
+      : tipo === 'prestador'
+        ? db.prestadores
+        : [...db.clientes, ...db.prestadores];
+
+  const usuario = colecao.find((u) => u.email.toLowerCase() === emailNormalizado);
+  const tipoUsuario = usuario && db.clientes.some((u) => u.id === usuario.id) ? 'cliente' : 'prestador';
 
   if (usuario) {
     const token = crypto.randomUUID();
     const expiraEm = new Date(Date.now() + 60 * 60 * 1000); // 1 hora
     const agora = new Date();
+    const appUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+
     // Aproveita para descartar tokens vencidos (senão só sairiam do banco
     // quando o servidor fosse reiniciado).
     db.redefinicoesSenha = db.redefinicoesSenha.filter(
       (r) => r.usuarioId !== usuario.id && new Date(r.expiraEm) > agora
     );
-    db.redefinicoesSenha.push({ token, tipo, usuarioId: usuario.id, expiraEm: paraIso(expiraEm) });
+    db.redefinicoesSenha.push({ token, tipo: tipoUsuario, usuarioId: usuario.id, expiraEm: paraIso(expiraEm) });
     await salvar();
+
     // Sem "await" de propósito: o envio de e-mail leva vários segundos e só
     // acontece quando o e-mail existe — esperar por ele deixaria a resposta
     // mais lenta para e-mails cadastrados e permitiria descobri-los medindo
     // o tempo. (enviarEmailRedefinicao já trata os próprios erros.)
-    enviarEmailRedefinicao({ paraEmail: usuario.email, nome: usuario.nome, tipo, token }).catch((erro) => {
+    const envio = await enviarEmailRedefinicao({
+      paraEmail: usuario.email,
+      nome: usuario.nome,
+      tipo: tipoUsuario,
+      token,
+      appUrl
+    }).catch((erro) => {
       console.warn('[e-mail] Falha inesperada ao enviar redefinição de senha:', erro.message);
+      return { link: `${appUrl}/?tipo=${encodeURIComponent(tipoUsuario)}&token=${encodeURIComponent(token)}`, smtpConfigurado: false };
+    });
+
+    return res.json({
+      mensagem: 'Se o email informado estiver cadastrado, enviaremos um link de redefinição.',
+      link: envio?.link || null
     });
   }
 
