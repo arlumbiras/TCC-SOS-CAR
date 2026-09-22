@@ -49,7 +49,7 @@ const API = (function () {
 
     let resposta;
     try {
-      resposta = await fetch(BASE + caminho, { ...opcoes, headers: cabecalhos });
+      resposta = await fetch(BASE + caminho, { cache: 'no-store', ...opcoes, headers: cabecalhos });
     } catch {
       // fetch só rejeita quando não chegou ao servidor (sem internet,
       // servidor fora do ar). Sem isto o usuário veria "Failed to fetch".

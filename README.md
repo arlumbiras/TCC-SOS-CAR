@@ -83,11 +83,14 @@ com credenciais padrão, link de redefinição de senha só no console).
    o status do chamado (com mapa) na mesma tela.
 3. **Como prestador:** ative o interruptor "Disponível" (com ele desligado,
    nenhum chamado aparece nem pode ser aceito), permita o acesso à
-   localização e aguarde os chamados aparecerem na lista. Clique em
-   "Aceitar" — se dois prestadores tentarem aceitar o mesmo chamado, só o
-   primeiro consegue (essa é a regra central do TCC). Cada prestador atende um
-   chamado por vez: é preciso concluir ou cancelar o atual antes de aceitar
-   outro.
+   localização. Na primeira entrada os pedidos são carregados uma vez; depois,
+   use "Atualizar" para buscar novos pedidos. A lista não é atualizada
+   automaticamente. Clique em "Visualizar pedido" para conferir os detalhes
+   antes de "Aceitar pedido". Se dois prestadores tentarem aceitar o
+   mesmo chamado, só o primeiro consegue (essa é a regra central do TCC).
+   Em "Configurações", o prestador também pode trocar sua categoria de
+   atendimento após confirmar a alteração. Cada prestador atende um chamado
+   por vez: é preciso concluir ou cancelar o atual antes de aceitar outro.
 4. Depois de aceitar, o prestador marca "Cheguei ao local" e depois
    "Concluir atendimento". O cliente pode então avaliar o atendimento — a
    nota passa a aparecer no perfil público do prestador. O comentário da

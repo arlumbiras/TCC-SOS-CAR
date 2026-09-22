@@ -126,9 +126,24 @@ function coordenadasValidas(latitude, longitude) {
   );
 }
 
+function categoriaValida(categoriaId) {
+  const id = Number(categoriaId);
+  return Number.isInteger(id) && db.categorias.some((categoria) => Number(categoria.id) === id);
+}
+
 // express.json() lê o corpo das requisições (ex.: os dados de um
 // formulário enviados em JSON) e disponibiliza em req.body.
 app.use(express.json());
+
+// As respostas da API representam estado atual dos chamados e usuários.
+// Impede que navegador, proxy ou service worker devolva uma lista antiga
+// quando o prestador clicar em "Atualizar".
+app.use('/api', (req, res, next) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+  next();
+});
 
 // Verificação de saúde (usada por monitoramento/hospedagem). Mostra onde os
 // dados estão sendo guardados e se a última gravação no MySQL falhou.
@@ -220,7 +235,7 @@ app.post('/api/auth/registrar', limitarRequisicoes(60 * 1000, 10), assincrono(as
   if (!telefoneValido(telefone)) {
     return res.status(400).json({ erro: 'Informe um telefone válido (até 20 caracteres).' });
   }
-  if (tipo === 'prestador' && !db.categorias.some((c) => c.id === Number(categoriaId))) {
+  if (tipo === 'prestador' && !categoriaValida(categoriaId)) {
     return res.status(400).json({ erro: 'Selecione uma categoria de atendimento válida.' });
   }
 
@@ -348,7 +363,7 @@ app.patch('/api/auth/atualizar', autenticar(['cliente', 'prestador']), assincron
 
   // Valida tudo ANTES de alterar qualquer campo, para uma requisição
   // recusada não deixar o usuário meio atualizado em memória.
-  const { nome, telefone, senha } = req.body;
+  const { nome, telefone, senha, categoriaId } = req.body;
   if (nome !== undefined && (typeof nome !== 'string' || !nome.trim() || nome.trim().length > 120)) {
     return res.status(400).json({ erro: 'Informe um nome válido (até 120 caracteres).' });
   }
@@ -360,9 +375,15 @@ app.patch('/api/auth/atualizar', autenticar(['cliente', 'prestador']), assincron
     const erroSenha = validarSenha(senha);
     if (erroSenha) return res.status(400).json({ erro: erroSenha });
   }
+  if (categoriaId !== undefined) {
+    if (req.sessao.tipo !== 'prestador' || !categoriaValida(categoriaId)) {
+      return res.status(400).json({ erro: 'Informe uma categoria de atendimento válida.' });
+    }
+  }
 
   if (typeof nome === 'string') usuario.nome = nome.trim();
   if (typeof telefone === 'string') usuario.telefone = telefone.trim() || null;
+  if (categoriaId !== undefined) usuario.categoriaId = Number(categoriaId);
   if (trocaSenha) {
     usuario.senhaHash = await bcrypt.hash(senha, 10);
     // Quem estivesse logado em outro aparelho (ou com a senha antiga
@@ -551,7 +572,7 @@ app.get('/api/prestador/me/avaliacoes', autenticar(['prestador']), (req, res) =>
 app.post('/api/chamados', autenticar(['cliente']), assincrono(async (req, res) => {
   const { categoriaId, latitude, longitude, endereco, descricao } = req.body;
 
-  if (!db.categorias.some((c) => c.id === Number(categoriaId))) {
+  if (!categoriaValida(categoriaId)) {
     return res.status(400).json({ erro: 'Categoria inválida.' });
   }
   if (!coordenadasValidas(latitude, longitude)) {
@@ -613,8 +634,14 @@ app.get('/api/chamados/disponiveis', autenticar(['prestador']), (req, res) => {
   // indisponível não recebe chamados na lista.
   if (!prestador.disponivel) return res.json([]);
 
+  // IDs vindos do MySQL e de instalações antigas podem ter tipos diferentes;
+  // a comparação numérica evita perder pedidos válidos após trocar a categoria.
   const disponiveis = db.chamados
-    .filter((c) => c.status === 'aberto' && c.categoriaId === prestador.categoriaId)
+    .filter(
+      (c) =>
+        c.status === 'aberto' &&
+        Number(c.categoriaId) === Number(prestador.categoriaId)
+    )
     .map((c) => ({
       ...montarResumoChamado(c),
       distanciaKm: distanciaKm(prestador.latitude, prestador.longitude, c.latitude, c.longitude)
@@ -645,7 +672,7 @@ app.post('/api/chamados/:id/aceitar', autenticar(['prestador']), assincrono(asyn
   if (!chamado) return res.status(404).json({ erro: 'Chamado não encontrado.' });
 
   const prestador = buscarUsuario('prestador', req.sessao.id);
-  if (chamado.categoriaId !== prestador.categoriaId) {
+  if (Number(chamado.categoriaId) !== Number(prestador.categoriaId)) {
     return res.status(403).json({ erro: 'Este chamado não é da sua categoria de atendimento.' });
   }
   // Checagem que implementa a regra central: só aceita se NINGUÉM

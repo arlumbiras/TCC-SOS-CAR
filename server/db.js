@@ -209,7 +209,7 @@ function normalizarPrestador(row) {
     senhaHash: row.senha_hash,
     telefone: row.telefone,
     cpf: row.cpf,
-    categoriaId: row.categoria_id,
+    categoriaId: Number(row.categoria_id),
     aprovado: row.aprovado === undefined ? true : !!row.aprovado,
     disponivel: !!row.disponivel,
     latitude: row.latitude,
@@ -222,7 +222,7 @@ function normalizarChamado(row) {
   return {
     id: row.id,
     clienteId: row.cliente_id,
-    categoriaId: row.categoria_id,
+    categoriaId: Number(row.categoria_id),
     prestadorId: row.prestador_id,
     latitude: row.latitude,
     longitude: row.longitude,
@@ -269,7 +269,10 @@ async function carregar() {
     modoFallback = false;
     const agora = new Date();
     Object.assign(db, {
-      categorias,
+      categorias: categorias.map((categoria) => ({
+        ...categoria,
+        id: Number(categoria.id)
+      })),
       clientes: clientes.map(normalizarCliente),
       prestadores: prestadores.map(normalizarPrestador),
       chamados: chamados.map(normalizarChamado),

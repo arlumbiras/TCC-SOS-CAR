@@ -37,6 +37,18 @@
     <p class="texto-auxiliar">Carregando…</p>
   </div>
 
+  <div id="modal-confirmar-chamado" class="modal oculto" role="dialog" aria-modal="true" aria-labelledby="modal-chamado-titulo">
+    <div class="modal-conteudo modal-chamado-conteudo">
+      <h2 id="modal-chamado-titulo">Conferir pedido</h2>
+      <dl id="modal-chamado-detalhes" class="detalhes"></dl>
+      <p class="texto-auxiliar">Confira as informações antes de aceitar este chamado.</p>
+      <div class="modal-acoes">
+        <button type="button" class="botao-secundario" id="modal-chamado-cancelar">Voltar</button>
+        <button type="button" class="botao-primario" id="modal-chamado-aceitar">Aceitar pedido</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Barra fixa no topo: aparece em qualquer tela (login ou logado). -->
   <header class="topo">
     <div class="marca">
@@ -275,7 +287,10 @@
       <!-- Bloco 1: nenhum chamado aceito no momento -->
       <div id="prestador-sem-chamado">
         <div class="cartao">
-          <h2>Chamados disponíveis na sua região</h2>
+          <div class="cartao-cabecalho">
+            <h2>Chamados disponíveis na sua região</h2>
+            <button type="button" id="btn-atualizar-chamados" class="botao-secundario botao-pequeno">Atualizar</button>
+          </div>
           <ul class="lista-chamados" id="lista-disponiveis"></ul>
           <p id="sem-chamados-msg" class="estado-vazio oculto">
             <svg class="estado-vazio-icone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16v6l-3 3H7l-3-3V4z"/><path d="M4 10v9a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-9"/></svg>
@@ -322,6 +337,10 @@
           </label>
           <label>Telefone <span class="opcional">(opcional)</span>
             <input type="tel" name="telefone" />
+          </label>
+          <label id="campo-categoria-config" class="oculto">Categoria de atendimento
+            <select name="categoriaId"></select>
+            <span class="texto-auxiliar">A alteração vale para os próximos chamados.</span>
           </label>
           <label>Nova senha <span class="opcional">(opcional)</span>
             <input type="password" name="senha" minlength="4" placeholder="Deixe em branco para manter" />
