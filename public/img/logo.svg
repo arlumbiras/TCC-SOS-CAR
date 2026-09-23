@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-label="SOS-Car logo">
-  <!-- Este SVG usa a imagem raster `logo.png` na mesma pasta como ícone. -->
-  <image href="logo.png" width="256" height="256" preserveAspectRatio="xMidYMid meet" />
+  <!-- Embutido como data URI (base64) -->
+  <image href="data:image/png;base64,zAVWHau0Cd22fltXkBv59q965UoJQZSS1uGmG+HJtYKZkwLqDakZXSab5xehR5/GcEJQnlEkU6ANGFYo3XWXXXn9CcdTr4+SpglJIFDNBpdcdjGLFi/S7zY6e3DxX/4k3vP+96pt5m1Nq6GNPVEU8Y63vYNrr7lOJwERvbONtRd/VygwBqHlK5ez/Lrl3PL3Wzj3l79gi7lz2XX33ThwvwM56jVHMW/rrUmShFarRZqmOhtjtcr73vserrzyChYv1jFLgjBEKNV+PCKnvAWB9kqRUvLcsmU8t2wZf/vbzfT39zNp4kS233lH9t9vH153zOt5yUt2zwTkIKDeqlMpV3j3O9/BP/5xC488/CgiDHD7USrbEbJ97TlpajweXBjmrwhDHe8oKpdI45jnlj3Pc8ue59bbbqVa0Udbt9xqK/bccw8OP+xVHHLIIUyY0E+joY8GNhoNwjDiNUe+huuvvY6zz/6JCAgUgREMpEKvCOlhss
+  " width="256" height="256" preserveAspectRatio="xMidYMid meet"/>
 </svg>
