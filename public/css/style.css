@@ -743,6 +743,12 @@ button:focus-visible {
   width: 100%;
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.35);
 }
+.modal-chamado-conteudo {
+  max-width: 480px;
+}
+.modal-chamado-conteudo .detalhes {
+  margin-top: 18px;
+}
 .modal-conteudo p {
   margin: 0 0 20px;
   font-size: 14.5px;
@@ -869,6 +875,11 @@ button:focus-visible {
   padding: 10px 12px;
   border-radius: 10px;
   font-size: 13.5px;
+  margin-bottom: 12px;
+}
+
+#tela-esqueci-senha .btn-voltar {
+  margin-top: 8px;
 }
 
 /* Utilitário genérico de "pilha vertical com espaçamento" — mesma

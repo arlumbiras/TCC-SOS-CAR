@@ -37,6 +37,18 @@
     <p class="texto-auxiliar">Carregando…</p>
   </div>
 
+  <div id="modal-confirmar-chamado" class="modal oculto" role="dialog" aria-modal="true" aria-labelledby="modal-chamado-titulo">
+    <div class="modal-conteudo modal-chamado-conteudo">
+      <h2 id="modal-chamado-titulo">Conferir pedido</h2>
+      <dl id="modal-chamado-detalhes" class="detalhes"></dl>
+      <p class="texto-auxiliar">Confira as informações antes de aceitar este chamado.</p>
+      <div class="modal-acoes">
+        <button type="button" class="botao-secundario" id="modal-chamado-cancelar">Voltar</button>
+        <button type="button" class="botao-primario" id="modal-chamado-aceitar">Aceitar pedido</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Barra fixa no topo: aparece em qualquer tela (login ou logado). -->
   <header class="topo">
     <div class="marca">
@@ -150,16 +162,10 @@
     <div class="conteudo conteudo-estreito">
       <div class="cartao">
         <h2>Esqueceu sua senha?</h2>
-        <p class="subtitulo">Informe seu email cadastrado — enviaremos um link para você criar uma nova senha.</p>
+        <p class="subtitulo">Informe seu email cadastrado — Enviaremos um link para você criar uma nova senha.</p>
         <form id="form-esqueci-senha" class="formulario">
-          <label>Sou
-            <select name="tipo">
-              <option value="cliente">Cliente</option>
-              <option value="prestador">Prestador</option>
-            </select>
-          </label>
           <label>Email
-            <input type="email" name="email" required autocomplete="email" />
+            <input type="email" name="email" required autocomplete="email" placeholder="seu@email.com" />
           </label>
           <button type="submit" class="botao-primario">Enviar link de redefinição</button>
         </form>
@@ -281,7 +287,10 @@
       <!-- Bloco 1: nenhum chamado aceito no momento -->
       <div id="prestador-sem-chamado">
         <div class="cartao">
-          <h2>Chamados disponíveis na sua região</h2>
+          <div class="cartao-cabecalho">
+            <h2>Chamados disponíveis na sua região</h2>
+            <button type="button" id="btn-atualizar-chamados" class="botao-secundario botao-pequeno">Atualizar</button>
+          </div>
           <ul class="lista-chamados" id="lista-disponiveis"></ul>
           <p id="sem-chamados-msg" class="estado-vazio oculto">
             <svg class="estado-vazio-icone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16v6l-3 3H7l-3-3V4z"/><path d="M4 10v9a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-9"/></svg>
@@ -321,13 +330,17 @@
     <div class="conteudo conteudo-estreito">
       <div class="cartao">
         <h2>Configurações da conta</h2>
-        <p class="subtitulo">Altere seus dados pessoais abaixo. Deixe o campo de senha em branco para manter a senha atual.</p>
+        <p class="subtitulo">Altere seus dados pessoais abaixo, Deixe o campo de senha em branco para manter a senha atual.</p>
         <form id="form-configuracoes" class="formulario">
           <label>Nome completo
             <input type="text" name="nome" required />
           </label>
           <label>Telefone <span class="opcional">(opcional)</span>
             <input type="tel" name="telefone" />
+          </label>
+          <label id="campo-categoria-config" class="oculto">Categoria de atendimento
+            <select name="categoriaId"></select>
+            <span class="texto-auxiliar">A alteração vale para os próximos chamados.</span>
           </label>
           <label>Nova senha <span class="opcional">(opcional)</span>
             <input type="password" name="senha" minlength="4" placeholder="Deixe em branco para manter" />
@@ -408,7 +421,7 @@
           <div class="tabela-caixa">
             <table class="tabela" id="admin-tabela-usuarios">
               <thead>
-                <tr><th>Nome</th><th>Email</th><th>Tipo</th><th>Categoria</th></tr>
+                <tr><th>Nome</th><th>Email</th><th>Tipo</th><th>Categoria</th><th>Status</th><th>Ações</th></tr>
               </thead>
               <tbody></tbody>
             </table>
@@ -443,7 +456,7 @@
           <p>Entre como cliente, escolha o tipo de problema, informe o endereço (ou use sua localização) e toque em "Solicitar socorro". Você acompanha o status em tempo real na mesma tela.</p>
         </details>
         <details class="faq-item">
-          <summary>Como sei quem vai me atender?</summary>
+          <summary>Como saber quem irá me atender?</summary>
           <p>Assim que um prestador aceita o chamado, o nome e o telefone dele aparecem na tela, junto com a nota média dele em atendimentos anteriores.</p>
         </details>
         <details class="faq-item">

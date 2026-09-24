@@ -40,6 +40,8 @@
   const linkAdmin = document.getElementById('link-admin');
   const formConfig = document.getElementById('form-configuracoes');
   const btnConfigCancel = document.getElementById('btn-config-cancel');
+  const campoCategoriaConfig = document.getElementById('campo-categoria-config');
+  let categoriaConfigAtual = null;
   let usuarioTipoAtual = null;
   let ultimoUsuario = null;
 
@@ -154,8 +156,14 @@
   const modalConfirmarTexto = document.getElementById('modal-confirmar-texto');
   const modalConfirmarOk = document.getElementById('modal-confirmar-ok');
   const modalConfirmarCancelar = document.getElementById('modal-confirmar-cancelar');
+  const modalConfirmarChamado = document.getElementById('modal-confirmar-chamado');
+  const modalChamadoDetalhes = document.getElementById('modal-chamado-detalhes');
+  const modalChamadoAceitar = document.getElementById('modal-chamado-aceitar');
+  const modalChamadoCancelar = document.getElementById('modal-chamado-cancelar');
 
   function toast(mensagem, tipo = 'erro') {
+    const notificacoes = toastContainer.querySelectorAll('.toast');
+    if (notificacoes.length >= 3) notificacoes[0].remove();
     const el = document.createElement('div');
     el.className = `toast toast-${tipo}`;
     el.textContent = mensagem; // textContent nunca interpreta HTML, sem risco de XSS
@@ -184,6 +192,29 @@
       }
       modalConfirmarOk.addEventListener('click', aoConfirmar);
       modalConfirmarCancelar.addEventListener('click', aoCancelar);
+    });
+  }
+
+  function confirmarChamado(chamado) {
+    modalChamadoDetalhes.innerHTML = `
+      <dt>Categoria</dt><dd>${escaparHtml(chamado.categoriaNome) || '—'}</dd>
+      <dt>Endereço</dt><dd>${escaparHtml(chamado.endereco) || 'Não informado'}</dd>
+      <dt>Descrição</dt><dd>${escaparHtml(chamado.descricao) || 'Sem descrição'}</dd>
+      <dt>Solicitado em</dt><dd>${formatarData(chamado.dataAbertura)}</dd>
+      ${chamado.distanciaKm != null ? `<dt>Distância</dt><dd>${chamado.distanciaKm.toFixed(1)} km</dd>` : ''}
+    `;
+    modalConfirmarChamado.classList.remove('oculto');
+    return new Promise((resolve) => {
+      function limpar(resultado) {
+        modalConfirmarChamado.classList.add('oculto');
+        modalChamadoAceitar.removeEventListener('click', aoAceitar);
+        modalChamadoCancelar.removeEventListener('click', aoCancelar);
+        resolve(resultado);
+      }
+      function aoAceitar() { limpar(true); }
+      function aoCancelar() { limpar(false); }
+      modalChamadoAceitar.addEventListener('click', aoAceitar);
+      modalChamadoCancelar.addEventListener('click', aoCancelar);
     });
   }
 
@@ -353,9 +384,16 @@
     const dados = Object.fromEntries(new FormData(formCadastro));
     await comCarregamento(formCadastro.querySelector('button[type="submit"]'), 'Criando conta...', async () => {
       try {
-        const { token, usuario } = await API.registrar({ tipo: perfilSelecionado, ...dados });
-        API.definirToken(token);
+        const resposta = await API.registrar({ tipo: perfilSelecionado, ...dados });
         formCadastro.reset();
+
+        if (perfilSelecionado === 'prestador' && resposta && resposta.mensagem) {
+          mostrarErro(resposta.mensagem);
+          return;
+        }
+
+        const { token, usuario } = resposta;
+        API.definirToken(token);
         entrarComoUsuario(perfilSelecionado, usuario);
       } catch (err) {
         mostrarErro(err.message);
@@ -421,6 +459,15 @@
         // preenche o formulário
         formConfig.elements.nome.value = usuario.nome || '';
         formConfig.elements.telefone.value = usuario.telefone || '';
+        campoCategoriaConfig.classList.toggle('oculto', usuarioTipoAtual !== 'prestador');
+        if (usuarioTipoAtual === 'prestador') {
+          const categorias = await API.categorias();
+          formConfig.elements.categoriaId.innerHTML = categorias
+            .map((categoria) => `<option value="${categoria.id}">${escaparHtml(categoria.nome)}</option>`)
+            .join('');
+          formConfig.elements.categoriaId.value = String(usuario.categoriaId);
+          categoriaConfigAtual = String(usuario.categoriaId);
+        }
         formConfig.elements.senha.value = '';
         mostrarTela('config');
       } catch (err) {
@@ -435,6 +482,12 @@
       e.preventDefault();
       const dados = Object.fromEntries(new FormData(formConfig));
       if (!dados.senha) delete dados.senha; // se vazio, não envia senha
+      if (usuarioTipoAtual !== 'prestador') delete dados.categoriaId;
+      const trocouCategoria =
+        usuarioTipoAtual === 'prestador' && dados.categoriaId !== categoriaConfigAtual;
+      if (trocouCategoria && !(await confirmar('Trocar sua categoria de atendimento? Os próximos chamados serão dessa nova categoria.'))) {
+        return;
+      }
       await comCarregamento(formConfig.querySelector('button[type="submit"]'), 'Salvando...', async () => {
         try {
           await API.atualizarUsuario(dados);
@@ -496,7 +549,6 @@
   if (btnEsqueciSenha) {
     btnEsqueciSenha.addEventListener('click', () => {
       formEsqueciSenha.reset();
-      formEsqueciSenha.elements.tipo.value = perfilSelecionado; // acompanha a aba ativa (cliente/prestador)
       formEsqueciSenha.classList.remove('oculto');
       esqueciSenhaSucesso.classList.add('oculto');
       mostrarTela('esqueciSenha');
@@ -510,7 +562,10 @@
       await comCarregamento(formEsqueciSenha.querySelector('button[type="submit"]'), 'Enviando...', async () => {
         try {
           const resposta = await API.esqueciSenha(dados);
-          esqueciSenhaSucesso.textContent = resposta.mensagem;
+          const linkHtml = resposta.link
+            ? `<br><a href="${encodeURI(resposta.link)}" target="_blank" rel="noopener">${escaparHtml(resposta.link)}</a>`
+            : '';
+          esqueciSenhaSucesso.innerHTML = `${escaparHtml(resposta.mensagem)}${linkHtml}`;
           esqueciSenhaSucesso.classList.remove('oculto');
           formEsqueciSenha.classList.add('oculto');
         } catch (err) {
@@ -525,9 +580,23 @@
       e.preventDefault();
       redefinirSenhaErro.classList.add('oculto');
       const dados = Object.fromEntries(new FormData(formRedefinirSenha));
+      const novaSenha = String(dados.novaSenha ?? '').trim();
+
+      if (!tokenRedefinicaoAtual) {
+        redefinirSenhaErro.textContent = 'Link de redefinição inválido ou ausente.';
+        redefinirSenhaErro.classList.remove('oculto');
+        return;
+      }
+
+      if (novaSenha.length < 4 || novaSenha.length > 72) {
+        redefinirSenhaErro.textContent = 'A nova senha deve ter entre 4 e 72 caracteres.';
+        redefinirSenhaErro.classList.remove('oculto');
+        return;
+      }
+
       await comCarregamento(formRedefinirSenha.querySelector('button[type="submit"]'), 'Redefinindo...', async () => {
         try {
-          await API.redefinirSenha({ token: tokenRedefinicaoAtual, novaSenha: dados.novaSenha });
+          await API.redefinirSenha({ token: tokenRedefinicaoAtual, novaSenha });
           // Limpa "?tipo=...&token=..." da URL para um F5 não reabrir esta tela.
           window.history.replaceState({}, '', window.location.pathname);
           formRedefinirSenha.reset();
@@ -838,9 +907,11 @@
   const prestadorHistoricoEl = document.getElementById('prestador-historico');
   const prestadorAvaliacaoResumoEl = document.getElementById('prestador-avaliacao-resumo');
   const prestadorListaAvaliacoesEl = document.getElementById('prestador-lista-avaliacoes');
+  const btnAtualizarChamados = document.getElementById('btn-atualizar-chamados');
 
   let localizacaoPrestador = null;
   let watchIdPrestador = null;
+  let chamadosDisponiveisAtuais = [];
 
   // Chamada uma vez, logo após o login/cadastro como prestador.
   function iniciarPainelPrestador(usuario) {
@@ -852,10 +923,9 @@
     mostrarTela('prestador');
     pararAtualizacaoAutomatica();
     obterLocalizacaoPrestador();
-    // Mesma ideia do painel do cliente: sem WebSockets, a lista de
-    // chamados disponíveis (ou o andamento do chamado aceito) é
-    // atualizada perguntando de novo à API a cada 6 segundos.
-    iniciarAtualizacaoAutomatica(atualizarPainelPrestador, 6000);
+    // A primeira entrada carrega os pedidos. Depois disso, a lista só muda
+    // quando o prestador usa o botão "Atualizar".
+    atualizarPainelPrestador().catch((err) => toast(err.message, 'erro'));
   }
 
   // Pede a localização GPS do prestador assim que o painel abre, e já
@@ -901,24 +971,39 @@
       toast(err.message, 'erro');
       return;
     }
-    // Já mostra a lista de chamados (ou o aviso de indisponível) sem esperar o próximo ciclo.
-    atualizarPainelPrestador().catch(() => {});
+    // A lista permanece como está até o prestador pedir uma atualização.
   });
 
-  // Delegação de evento: em vez de um listener por botão "Aceitar" (que
+  btnAtualizarChamados.addEventListener('click', async () => {
+    toast('Atualizando pedidos...', 'sucesso');
+    await comCarregamento(btnAtualizarChamados, 'Atualizando...', async () => {
+      try {
+        await atualizarPainelPrestador();
+        toast('Pedidos atualizados.', 'sucesso');
+      } catch (err) {
+        toast(err.message, 'erro');
+      }
+    });
+  });
+
+  // Delegação de evento: em vez de um listener por botão do pedido (que
   // teria que ser recriado toda vez que a lista é redesenhada), ouvimos
   // o clique no <ul> inteiro e conferimos se o alvo tem o atributo
-  // "data-aceitar" (ver renderizarDisponiveis, mais abaixo).
+  // "data-visualizar-pedido" (ver renderizarDisponiveis, mais abaixo).
   listaDisponiveisEl.addEventListener('click', async (e) => {
-    const botao = e.target.closest('[data-aceitar]');
+    const botao = e.target.closest('[data-visualizar-pedido]');
     if (!botao) return;
     botao.disabled = true; // evita duplo clique enquanto o pedido está em voo
     try {
-      await API.aceitarChamado(botao.dataset.aceitar);
+      const selecionado = chamadosDisponiveisAtuais.find((item) => item.id === botao.dataset.visualizarPedido);
+      if (!selecionado || !(await confirmarChamado(selecionado))) return;
+      await API.aceitarChamado(selecionado.id);
     } catch (err) {
       // Erro mais comum aqui: outro prestador aceitou primeiro (409) —
       // a mensagem já vem pronta da API.
       toast(err.message, 'erro');
+    } finally {
+      botao.disabled = false;
     }
     await atualizarPainelPrestador().catch(() => {}); // atualiza a lista de qualquer forma (com ou sem sucesso)
   });
@@ -998,6 +1083,7 @@
   // carrega o id do chamado no atributo "data-aceitar" do botão, lido
   // pelo listener de delegação configurado acima.
   function renderizarDisponiveis(lista) {
+    chamadosDisponiveisAtuais = lista;
     semChamadosMsg.classList.toggle('oculto', lista.length > 0);
     // Com o interruptor desligado o servidor não devolve chamados; sem esta
     // explicação, "Nenhum chamado disponível" pareceria falta de demanda.
@@ -1012,7 +1098,7 @@
           <strong>${escaparHtml(c.endereco) || 'Endereço não informado'}</strong>
           <div class="texto-auxiliar">${escaparHtml(c.descricao) || 'Sem descrição'}${c.distanciaKm != null ? ` · ${c.distanciaKm.toFixed(1)} km` : ''}</div>
         </div>
-        <button class="botao-primario" data-aceitar="${c.id}">Aceitar</button>
+        <button class="botao-primario" data-visualizar-pedido="${c.id}">Visualizar pedido</button>
       </li>`
       )
       .join('');
@@ -1212,17 +1298,40 @@
     ];
     adminTabelaUsuarios.innerHTML = linhas.length
       ? linhas
-          .map(
-            (u) => `
+          .map((u) => {
+            const statusTexto = u.tipo === 'Prestador'
+              ? (u.aprovado === true ? 'Aprovado' : 'Pendente')
+              : 'Ativo';
+            const botaoAprovar = u.tipo === 'Prestador' && u.aprovado !== true
+              ? `<button type="button" class="botao-primario botao-pequeno" data-aprovar-prestador="${u.id}">Aprovar</button>`
+              : '';
+
+            return `
         <tr>
           <td>${escaparHtml(u.nome)}</td>
           <td>${escaparHtml(u.email)}</td>
           <td>${u.tipo}</td>
           <td>${escaparHtml(u.categoriaNome) || '—'}</td>
-        </tr>`
-          )
+          <td>${statusTexto}</td>
+          <td>${botaoAprovar}</td>
+        </tr>`;
+          })
           .join('')
-      : '<tr><td colspan="4" class="texto-auxiliar">Nenhum usuário cadastrado.</td></tr>';
+      : '<tr><td colspan="6" class="texto-auxiliar">Nenhum usuário cadastrado.</td></tr>';
+  }
+
+  if (adminTabelaUsuarios) {
+    adminTabelaUsuarios.addEventListener('click', async (e) => {
+      const botao = e.target.closest('[data-aprovar-prestador]');
+      if (!botao) return;
+      try {
+        await API.adminAprovarPrestador(botao.dataset.aprovarPrestador);
+        await atualizarPainelAdmin();
+        toast('Prestador aprovado com sucesso.', 'sucesso');
+      } catch (err) {
+        toast(err.message, 'erro');
+      }
+    });
   }
 
   async function renderizarChamadosAdmin() {

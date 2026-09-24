@@ -126,9 +126,24 @@ function coordenadasValidas(latitude, longitude) {
   );
 }
 
+function categoriaValida(categoriaId) {
+  const id = Number(categoriaId);
+  return Number.isInteger(id) && db.categorias.some((categoria) => Number(categoria.id) === id);
+}
+
 // express.json() lê o corpo das requisições (ex.: os dados de um
 // formulário enviados em JSON) e disponibiliza em req.body.
 app.use(express.json());
+
+// As respostas da API representam estado atual dos chamados e usuários.
+// Impede que navegador, proxy ou service worker devolva uma lista antiga
+// quando o prestador clicar em "Atualizar".
+app.use('/api', (req, res, next) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+  next();
+});
 
 // Verificação de saúde (usada por monitoramento/hospedagem). Mostra onde os
 // dados estão sendo guardados e se a última gravação no MySQL falhou.
@@ -220,7 +235,7 @@ app.post('/api/auth/registrar', limitarRequisicoes(60 * 1000, 10), assincrono(as
   if (!telefoneValido(telefone)) {
     return res.status(400).json({ erro: 'Informe um telefone válido (até 20 caracteres).' });
   }
-  if (tipo === 'prestador' && !db.categorias.some((c) => c.id === Number(categoriaId))) {
+  if (tipo === 'prestador' && !categoriaValida(categoriaId)) {
     return res.status(400).json({ erro: 'Selecione uma categoria de atendimento válida.' });
   }
 
@@ -268,6 +283,7 @@ app.post('/api/auth/registrar', limitarRequisicoes(60 * 1000, 10), assincrono(as
   // localização atual.
   if (tipo === 'prestador') {
     usuario.categoriaId = Number(categoriaId);
+    usuario.aprovado = false;
     usuario.disponivel = false;
     usuario.latitude = null;
     usuario.longitude = null;
@@ -275,6 +291,12 @@ app.post('/api/auth/registrar', limitarRequisicoes(60 * 1000, 10), assincrono(as
 
   colecao.push(usuario); // "INSERT" na tabela em memória
   await salvar();
+
+  if (tipo === 'prestador') {
+    return res.status(201).json({
+      mensagem: 'Cadastro enviado para aprovação do administrador. Você só conseguirá fazer login após a aprovação.'
+    });
+  }
 
   const token = criarSessao(tipo, usuario.id);
   // "paraPublico" remove a senhaHash antes de devolver o usuário — o
@@ -300,6 +322,10 @@ app.post('/api/auth/login', limitarRequisicoes(60 * 1000, 10), assincrono(async 
     // senha que errou, para não ajudar quem estiver tentando adivinhar
     // credenciais de outra pessoa.
     return res.status(401).json({ erro: 'Email ou senha incorretos.' });
+  }
+
+  if (tipo === 'prestador' && usuario.aprovado !== true) {
+    return res.status(403).json({ erro: 'Seu cadastro está pendente de aprovação do administrador.' });
   }
 
   const token = criarSessao(tipo, usuario.id);
@@ -337,7 +363,7 @@ app.patch('/api/auth/atualizar', autenticar(['cliente', 'prestador']), assincron
 
   // Valida tudo ANTES de alterar qualquer campo, para uma requisição
   // recusada não deixar o usuário meio atualizado em memória.
-  const { nome, telefone, senha } = req.body;
+  const { nome, telefone, senha, categoriaId } = req.body;
   if (nome !== undefined && (typeof nome !== 'string' || !nome.trim() || nome.trim().length > 120)) {
     return res.status(400).json({ erro: 'Informe um nome válido (até 120 caracteres).' });
   }
@@ -349,9 +375,15 @@ app.patch('/api/auth/atualizar', autenticar(['cliente', 'prestador']), assincron
     const erroSenha = validarSenha(senha);
     if (erroSenha) return res.status(400).json({ erro: erroSenha });
   }
+  if (categoriaId !== undefined) {
+    if (req.sessao.tipo !== 'prestador' || !categoriaValida(categoriaId)) {
+      return res.status(400).json({ erro: 'Informe uma categoria de atendimento válida.' });
+    }
+  }
 
   if (typeof nome === 'string') usuario.nome = nome.trim();
   if (typeof telefone === 'string') usuario.telefone = telefone.trim() || null;
+  if (categoriaId !== undefined) usuario.categoriaId = Number(categoriaId);
   if (trocaSenha) {
     usuario.senhaHash = await bcrypt.hash(senha, 10);
     // Quem estivesse logado em outro aparelho (ou com a senha antiga
@@ -370,26 +402,49 @@ app.patch('/api/auth/atualizar', autenticar(['cliente', 'prestador']), assincron
 app.post('/api/auth/esqueci-senha', limitarRequisicoes(60 * 1000, 3), assincrono(async (req, res) => {
   const { tipo, email } = req.body;
   const emailNormalizado = typeof email === 'string' ? email.trim().toLowerCase() : '';
-  const colecao = tipo === 'cliente' ? db.clientes : tipo === 'prestador' ? db.prestadores : null;
-  const usuario = colecao && colecao.find((u) => u.email.toLowerCase() === emailNormalizado);
+
+  const colecao =
+    tipo === 'cliente'
+      ? db.clientes
+      : tipo === 'prestador'
+        ? db.prestadores
+        : [...db.clientes, ...db.prestadores];
+
+  const usuario = colecao.find((u) => u.email.toLowerCase() === emailNormalizado);
+  const tipoUsuario = usuario && db.clientes.some((u) => u.id === usuario.id) ? 'cliente' : 'prestador';
 
   if (usuario) {
-    const token = crypto.randomUUID();
-    const expiraEm = new Date(Date.now() + 60 * 60 * 1000); // 1 hora
+    const token = process.env.RESET_TOKEN_OVERRIDE || crypto.randomUUID();
+    const expiraEm = new Date(Date.now() + 60 * 60 * 1000);
     const agora = new Date();
+    const appUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+
     // Aproveita para descartar tokens vencidos (senão só sairiam do banco
     // quando o servidor fosse reiniciado).
     db.redefinicoesSenha = db.redefinicoesSenha.filter(
       (r) => r.usuarioId !== usuario.id && new Date(r.expiraEm) > agora
     );
-    db.redefinicoesSenha.push({ token, tipo, usuarioId: usuario.id, expiraEm: paraIso(expiraEm) });
+    db.redefinicoesSenha.push({ token, tipo: tipoUsuario, usuarioId: usuario.id, expiraEm: paraIso(expiraEm) });
     await salvar();
+
     // Sem "await" de propósito: o envio de e-mail leva vários segundos e só
     // acontece quando o e-mail existe — esperar por ele deixaria a resposta
     // mais lenta para e-mails cadastrados e permitiria descobri-los medindo
     // o tempo. (enviarEmailRedefinicao já trata os próprios erros.)
-    enviarEmailRedefinicao({ paraEmail: usuario.email, nome: usuario.nome, tipo, token }).catch((erro) => {
+    const envio = await enviarEmailRedefinicao({
+      paraEmail: usuario.email,
+      nome: usuario.nome,
+      tipo: tipoUsuario,
+      token,
+      appUrl
+    }).catch((erro) => {
       console.warn('[e-mail] Falha inesperada ao enviar redefinição de senha:', erro.message);
+      return { link: `${appUrl}/?tipo=${encodeURIComponent(tipoUsuario)}&token=${encodeURIComponent(token)}`, smtpConfigurado: false };
+    });
+
+    return res.json({
+      mensagem: 'Se o email informado estiver cadastrado, enviaremos um link de redefinição.',
+      link: envio?.link || null
     });
   }
 
@@ -517,7 +572,7 @@ app.get('/api/prestador/me/avaliacoes', autenticar(['prestador']), (req, res) =>
 app.post('/api/chamados', autenticar(['cliente']), assincrono(async (req, res) => {
   const { categoriaId, latitude, longitude, endereco, descricao } = req.body;
 
-  if (!db.categorias.some((c) => c.id === Number(categoriaId))) {
+  if (!categoriaValida(categoriaId)) {
     return res.status(400).json({ erro: 'Categoria inválida.' });
   }
   if (!coordenadasValidas(latitude, longitude)) {
@@ -579,8 +634,14 @@ app.get('/api/chamados/disponiveis', autenticar(['prestador']), (req, res) => {
   // indisponível não recebe chamados na lista.
   if (!prestador.disponivel) return res.json([]);
 
+  // IDs vindos do MySQL e de instalações antigas podem ter tipos diferentes;
+  // a comparação numérica evita perder pedidos válidos após trocar a categoria.
   const disponiveis = db.chamados
-    .filter((c) => c.status === 'aberto' && c.categoriaId === prestador.categoriaId)
+    .filter(
+      (c) =>
+        c.status === 'aberto' &&
+        Number(c.categoriaId) === Number(prestador.categoriaId)
+    )
     .map((c) => ({
       ...montarResumoChamado(c),
       distanciaKm: distanciaKm(prestador.latitude, prestador.longitude, c.latitude, c.longitude)
@@ -611,7 +672,7 @@ app.post('/api/chamados/:id/aceitar', autenticar(['prestador']), assincrono(asyn
   if (!chamado) return res.status(404).json({ erro: 'Chamado não encontrado.' });
 
   const prestador = buscarUsuario('prestador', req.sessao.id);
-  if (chamado.categoriaId !== prestador.categoriaId) {
+  if (Number(chamado.categoriaId) !== Number(prestador.categoriaId)) {
     return res.status(403).json({ erro: 'Este chamado não é da sua categoria de atendimento.' });
   }
   // Checagem que implementa a regra central: só aceita se NINGUÉM
@@ -826,6 +887,18 @@ app.get('/api/admin/usuarios', autenticar(['admin']), (req, res) => {
   });
 });
 
+app.post('/api/admin/prestadores/:id/aprovar', autenticar(['admin']), assincrono(async (req, res) => {
+  const prestador = db.prestadores.find((p) => p.id === req.params.id);
+  if (!prestador) return res.status(404).json({ erro: 'Prestador não encontrado.' });
+  if (prestador.aprovado === true) {
+    return res.status(409).json({ erro: 'Este prestador já está aprovado.' });
+  }
+
+  prestador.aprovado = true;
+  await salvar();
+  res.json(paraPublico('prestador', prestador));
+}));
+
 // Lista todos os chamados do sistema (qualquer status), com filtro
 // opcional por status via query string — usada na tabela de chamados do
 // painel admin.
@@ -891,6 +964,7 @@ function paraPublico(tipo, usuario) {
   const { senhaHash, ...resto } = usuario; // "..." copia tudo, menos o que foi desestruturado antes
   if (tipo === 'prestador') {
     resto.categoriaNome = db.categorias.find((c) => c.id === usuario.categoriaId)?.nome;
+    resto.aprovado = usuario.aprovado !== undefined ? Boolean(usuario.aprovado) : true;
   }
   return resto;
 }

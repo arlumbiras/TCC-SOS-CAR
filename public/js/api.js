@@ -49,7 +49,7 @@ const API = (function () {
 
     let resposta;
     try {
-      resposta = await fetch(BASE + caminho, { ...opcoes, headers: cabecalhos });
+      resposta = await fetch(BASE + caminho, { cache: 'no-store', ...opcoes, headers: cabecalhos });
     } catch {
       // fetch só rejeita quando não chegou ao servidor (sem internet,
       // servidor fora do ar). Sem isto o usuário veria "Failed to fetch".
@@ -117,6 +117,7 @@ const API = (function () {
 
     adminEstatisticas: () => requisitar('/admin/estatisticas'),
     adminUsuarios: () => requisitar('/admin/usuarios'),
+    adminAprovarPrestador: (id) => requisitar(`/admin/prestadores/${id}/aprovar`, { method: 'POST' }),
     adminChamados: (status) => requisitar('/admin/chamados' + (status ? `?status=${encodeURIComponent(status)}` : '')),
     adminCancelarChamado: (id) => requisitar(`/admin/chamados/${id}/cancelar`, { method: 'POST' }),
     adminCategorias: () => requisitar('/admin/categorias'),
