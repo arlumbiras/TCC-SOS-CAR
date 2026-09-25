@@ -1,5 +1,10 @@
 
 node_modules/
+.expo/
+mobile/.expo/
+.expo
+mobile/.expo
+mobile/dist/
 .certs/
 # Anotacoes com credenciais e backups (o zip antigo contem um .env dentro)
 banco.txt

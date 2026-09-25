@@ -18,6 +18,7 @@ const bcrypt = require('bcryptjs');
 const os = require('os');
 const fs = require('fs');
 const https = require('https');
+const http = require('http');
 const selfsigned = require('selfsigned');
 
 const { db, salvar, inicializarBanco, estadoPersistencia } = require('./db');
@@ -1062,6 +1063,9 @@ const TLS_CERT_FILE = process.env.TLS_CERT_FILE;
 const TLS_KEY_FILE = process.env.TLS_KEY_FILE;
 
 async function criarServidor() {
+  if (process.env.DEV_HTTP === 'true') {
+    return http.createServer(app);
+  }
   if (Boolean(TLS_CERT_FILE) !== Boolean(TLS_KEY_FILE)) {
     throw new Error('Configure TLS_CERT_FILE e TLS_KEY_FILE juntos para ativar HTTPS.');
   }

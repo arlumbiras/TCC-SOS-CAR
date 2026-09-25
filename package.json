@@ -6,7 +6,9 @@
   "main": "server/server.js",
   "scripts": {
     "start": "node server/server.js",
-    "dev": "node server/server.js"
+    "dev": "node server/server.js",
+    "mobile": "npm --prefix mobile start",
+    "mobile:android": "npm --prefix mobile run android"
   },
   "engines": {
     "node": ">=16"
